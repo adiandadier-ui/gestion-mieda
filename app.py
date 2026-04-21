@@ -16,8 +16,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- GESTION DE LA MÉMOIRE (Session State) ---
-# Si la liste n'existe pas encore dans la mémoire de la session, on l'initialise
+# --- GESTION DE LA MÉMOIRE DYNAMIQUE ---
 if 'base_pasteurs' not in st.session_state:
     st.session_state.base_pasteurs = {
         "KOKORA JONAS": ["Pasteur", 100000, "Abidjan Nord"],
@@ -31,7 +30,6 @@ if 'base_pasteurs' not in st.session_state:
 st.title("🛡️ APPLICATION DE GESTION MIEDA")
 
 # --- STRUCTURE DES ONGLETS ---
-# Ajout d'un 5ème onglet pour la configuration
 tab_gen, tab_dime, tab_offr, tab_past, tab_admin = st.tabs([
     "🌍 Général", 
     "💰 Rapport Dîme", 
@@ -41,7 +39,6 @@ tab_gen, tab_dime, tab_offr, tab_past, tab_admin = st.tabs([
 ])
 
 with tab_gen:
-    # On récupère les régions uniques présentes dans la base pour le menu
     regions_dispo = list(set([v[2] for v in st.session_state.base_pasteurs.values()]))
     if "Abidjan Sud" not in regions_dispo: regions_dispo.append("Abidjan Sud")
     
@@ -50,6 +47,7 @@ with tab_gen:
     district_sel = st.text_input("📍 District :", placeholder="Nom du district")
 
 with tab_dime:
+    # Structure exacte selon la photo
     dime_mois = st.number_input("Dîme du mois:", value=2421800)
     loyer_temple = st.number_input("Loyer temple:", value=240000)
     loyer_res = st.number_input("Loyer résidence Pasteurs:", value=510000)
@@ -60,6 +58,7 @@ with tab_dime:
     autres_ress = st.number_input("Autres ressources/appro.:", value=0)
 
 with tab_offr:
+    # Structure exacte selon la photo
     st.number_input("Offrandes ordinaires:", value=0)
     st.number_input("Dépenses sur offr. ord.:", value=0)
     st.number_input("1ère Action de Grâce:", value=0)
@@ -69,6 +68,10 @@ with tab_offr:
     st.number_input("Administration:", value=0)
     st.number_input("Evangélisation:", value=0)
     st.number_input("2ème Action de Grâce:", value=0)
+
+with tab_past:
+    st.write(f"### Soutiens pour la région : {region_sel}")
+    p_reg = {k: v for k, v in st.session_state.base_pasteurs.items() if v[2] == region_sel}
     
     if not p_reg:
         st.warning("Aucun pasteur enregistré dans cette région.")
@@ -86,19 +89,19 @@ with tab_admin:
         col_a, col_b = st.columns(2)
         new_grade = col_a.selectbox("Grade", ["Pasteur", "Evangéliste", "Gestionnaire Distri"])
         new_prevu = col_b.number_input("Montant Prévu (F CFA)", step=5000)
-        new_region = st.selectbox("Région d'affectation", ["Abidjan Nord", "Abidjan Sud", "Bouaké", "San-Pedro"]) #
+        # Utilisation des districts de Côte d'Ivoire gérés par l'utilisateur
+        new_region = st.selectbox("Région d'affectation", ["Abidjan Nord", "Abidjan Sud", "Bouaké", "San-Pedro"])
         
         submit = st.form_submit_button("ENREGISTRER DANS LA BASE")
         
         if submit and new_nom:
-            # Ajout à la mémoire session_state
             st.session_state.base_pasteurs[new_nom.upper()] = [new_grade, new_prevu, new_region]
-            st.success(f"{new_nom} ajouté avec succès ! Vérifiez l'onglet 'Liste Pasteurs'.")
-            # Note : Ne pas faire st.experimental_rerun() ici pour laisser le message de succès visible
+            st.success(f"{new_nom} ajouté avec succès !")
 
 # --- BOUTON FINAL ---
 if st.button("Générer le Bilan Intégral"):
     st.success("Bilan généré avec succès !")
-    dime_10 = dime_mois * 0.10 #
-    dispo = (dime_mois - dime_10) - (loyer_temple + loyer_res)
-    st.metric("Total disponible après 10%", f"{int(dispo):,} F CFA")
+    # Calcul basé sur la règle des 5 semaines pour les alertes stocks mais appliqué ici au bilan financier mensuel
+    dime_10 = dime_mois * 0.10 
+    dispo = (dime_mois - dime_10) - (loyer_temple + loyer_res + autres_ch + frais_transf + frais_transp + perdiem) + autres_ress
+    st.metric("Total disponible après prélèvement 10%", f"{int(dispo):,} F CFA")
