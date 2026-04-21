@@ -5,7 +5,7 @@ import io
 # 1. CONFIGURATION DE LA PAGE
 st.set_page_config(page_title="APPLICATION DE GESTION MIEDA", layout="wide")
 
-# 2. STYLE VISUEL (Bouton Bleu et Onglets)
+# 2. STYLE VISUEL
 st.markdown("""
     <style>
     .stButton>button {
@@ -19,7 +19,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 3. GESTION DE LA MÉMOIRE (Session State)
+# 3. BASE DE DONNÉES (Session State)
 if 'base_pasteurs' not in st.session_state:
     st.session_state.base_pasteurs = {
         "KOKORA JONAS": ["Pasteur", 100000, "Abidjan Nord"],
@@ -30,7 +30,7 @@ if 'base_pasteurs' not in st.session_state:
 
 st.title("🛡️ APPLICATION DE GESTION MIEDA")
 
-# 4. STRUCTURE DES ONGLETS
+# 4. STRUCTURE DES ONGLETS (Structure conservée selon vidéo et photos)
 tab_gen, tab_dime, tab_offr, tab_past, tab_config = st.tabs([
     "🌍 Général", "💰 Rapport Dîme", "🕊️ Offrandes", "👨‍💼 Liste Pasteurs", "⚙️ Configuration"
 ])
@@ -43,92 +43,94 @@ with tab_gen:
     mois_sel = col_a.selectbox("📅 Mois :", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
     district_sel = col_b.text_input("📍 District :", placeholder="Nom du district")
 
-# --- ONGLET RAPPORT DÎME (Structure selon photo) ---
+# --- ONGLET RAPPORT DÎME (Détail conservé selon photo) ---
 with tab_dime:
-    dime_mois = st.number_input("Dîme du mois:", value=2421800)
-    loyer_temple = st.number_input("Loyer temple:", value=240000)
-    loyer_res = st.number_input("Loyer résidence Pasteurs:", value=510000)
-    autres_ch = st.number_input("Autres charges:", value=0)
-    frais_transf = st.number_input("Frais de transfert:", value=0)
-    frais_transp = st.number_input("Frais de transport:", value=0)
+    d_mois = st.number_input("Dîme du mois:", value=2421800)
+    l_temple = st.number_input("Loyer temple:", value=240000)
+    l_res = st.number_input("Loyer résidence Pasteurs:", value=510000)
+    a_ch = st.number_input("Autres charges:", value=0)
+    f_transf = st.number_input("Frais de transfert:", value=0)
+    f_transp = st.number_input("Frais de transport:", value=0)
     perdiem = st.number_input("Perdiem Gestion:", value=0)
-    autres_ress = st.number_input("Autres ressources/appro.:", value=0)
+    a_ress = st.number_input("Autres ressources/appro.:", value=0)
 
-# --- ONGLET OFFRANDES (Structure selon photo) ---
+# --- ONGLET OFFRANDES (Détail conservé selon photo) ---
 with tab_offr:
-    offr_ord = st.number_input("Offrandes ordinaires:", value=0)
-    dep_offr = st.number_input("Dépenses sur offr. ord.:", value=0)
-    act_grace1 = st.number_input("1ère Action de Grâce:", value=0)
-    sout_dist = st.number_input("Soutien aux districts:", value=0)
-    sout_insp = st.number_input("Soutien Inspectorat:", value=0)
-    sout_soc = st.number_input("Soutien Aff. Sociales:", value=0)
+    o_ord = st.number_input("Offrandes ordinaires:", value=0)
+    d_offr = st.number_input("Dépenses sur offr. ord.:", value=0)
+    g1 = st.number_input("1ère Action de Grâce:", value=0)
+    s_dist = st.number_input("Soutien aux districts:", value=0)
+    s_insp = st.number_input("Soutien Inspectorat:", value=0)
+    s_soc = st.number_input("Soutien Aff. Sociales:", value=0)
     admin = st.number_input("Administration:", value=0)
     evang = st.number_input("Evangélisation:", value=0)
-    act_grace2 = st.number_input("2ème Action de Grâce:", value=0)
-    
-    total_offr_brut = offr_ord + act_grace1 + act_grace2 + sout_dist + sout_insp + sout_soc + admin + evang
+    g2 = st.number_input("2ème Action de Grâce:", value=0)
 
 # --- ONGLET LISTE PASTEURS ---
 with tab_past:
-    st.write(f"### Soutiens pour la région : {region_sel}")
+    st.write(f"### Saisie des versements : {region_sel}")
     p_reg = {k: v for k, v in st.session_state.base_pasteurs.items() if v[2] == region_sel}
-    saisies_soutiens = {}
+    saisies_v = {}
     for nom, infos in p_reg.items():
         c1, c2 = st.columns([3, 1])
-        c1.write(f"**{nom}**")
-        saisies_soutiens[nom] = c2.number_input("Versé", value=infos[1], key=f"s_{nom}", label_visibility="collapsed")
+        c1.write(nom)
+        saisies_v[nom] = c2.number_input("Versé", value=infos[1], key=f"s_{nom}", label_visibility="collapsed")
 
 # --- ONGLET CONFIGURATION ---
 with tab_config:
-    with st.form("config_p"):
-        n_nom = st.text_input("Nom du Pasteur")
+    with st.form("add"):
+        n_nom = st.text_input("Nom")
         n_reg = st.selectbox("Région", ["Abidjan Nord", "Abidjan Sud", "Bouaké", "San-Pedro"])
-        n_sal = st.number_input("Salaire de base", value=50000)
+        n_sal = st.number_input("Montant", value=50000)
         if st.form_submit_button("Ajouter"):
             st.session_state.base_pasteurs[n_nom.upper()] = ["Pasteur", n_sal, n_reg]
             st.rerun()
 
-# --- GÉNÉRATION DU BILAN ---
+# --- GÉNÉRATION DU RAPPORT DÉTAILLÉ ---
 st.divider()
-if st.button("Générer le Bilan Intégral"):
-    # Calcul Dîme Nette (Déduction 10%)
-    dime_nette = dime_mois * 0.90
+if st.button("Générer le Bilan Détaillé"):
+    st.success(f"Rapport de gestion établi pour {region_sel} - {mois_sel}")
     
-    st.success("Rapport généré !")
+    # 1. Détail du Rapport Dîmes
+    st.subheader("💰 Détail du Rapport Dîmes")
+    dime_10 = d_mois * 0.10 # Prélèvement obligatoire
+    df_dime_detail = pd.DataFrame([
+        {"Rubrique": "Dîme du mois", "Montant": f"{d_mois:,} F"},
+        {"Rubrique": "Dîme des Dîmes (10%)", "Montant": f"-{int(dime_10):,} F"},
+        {"Rubrique": "Loyer temple", "Montant": f"-{l_temple:,} F"},
+        {"Rubrique": "Loyer résidence Pasteurs", "Montant": f"-{l_res:,} F"},
+        {"Rubrique": "Autres charges", "Montant": f"-{a_ch:,} F"},
+        {"Rubrique": "Frais de transfert/transport", "Montant": f"-{f_transf + f_transp:,} F"},
+        {"Rubrique": "Autres ressources", "Montant": f"{a_ress:,} F"}
+    ])
+    st.table(df_dime_detail)
 
-    # TABLEAU 1 : BILAN RÉGIONAL AVEC VOS COLONNES
-    st.subheader("📊 Rapport de Synthèse")
-    df_bilan = pd.DataFrame([{
-        "Mois": mois_sel,
-        "Region": region_sel,
-        "Libellé Dimes": "Dîme Nette (90%)",
-        "Montant Dimes": f"{int(dime_nette):,} F",
-        "Libellé Offrande": "Total Offrandes Brut",
-        "Montant Offrande": f"{int(total_offr_brut):,} F"
-    }])
-    st.table(df_bilan)
+    # 2. Détail du Rapport Offrandes
+    st.subheader("🕊️ Détail du Rapport Offrandes")
+    df_offr_detail = pd.DataFrame([
+        {"Rubrique": "Offrandes ordinaires", "Montant": f"{o_ord:,} F"},
+        {"Rubrique": "Dépenses sur offrandes", "Montant": f"-{d_offr:,} F"},
+        {"Rubrique": "Actions de Grâce (Total)", "Montant": f"{g1 + g2:,} F"},
+        {"Rubrique": "Soutiens (Districts/Insp/Social)", "Montant": f"{s_dist + s_insp + s_soc:,} F"},
+        {"Rubrique": "Administration & Evangélisation", "Montant": f"{admin + evang:,} F"}
+    ])
+    st.table(df_offr_detail)
 
-    # TABLEAU 2 : PASTEURS AVEC VOS COLONNES
-    st.subheader("👨‍💼 Détail des Paiements")
-    liste_p = []
-    for nom, salaire in saisies_soutiens.items():
-        liste_p.append({
-            "Pasteur": nom, 
-            "Salaire Versé": f"{int(salaire):,} F"
-        })
-    
-    df_pasteurs = pd.DataFrame(liste_p)
-    st.table(df_pasteurs)
+    # 3. Détail des Pasteurs
+    st.subheader("👨‍💼 Détail des Soutiens Versés")
+    liste_p = [{"Pasteur": k, "Salaire Versé": f"{v:,} F"} for k, v in saisies_v.items()]
+    st.table(pd.DataFrame(liste_p))
 
-    # EXPORT EXCEL
+    # EXPORT EXCEL DÉTAILLÉ
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_bilan.to_excel(writer, sheet_name='Bilan', index=False)
-        df_pasteurs.to_excel(writer, sheet_name='Pasteurs', index=False)
+        df_dime_detail.to_excel(writer, sheet_name='Detail Dimes', index=False)
+        df_offr_detail.to_excel(writer, sheet_name='Detail Offrandes', index=False)
+        pd.DataFrame(liste_p).to_excel(writer, sheet_name='Detail Pasteurs', index=False)
     
     st.download_button(
-        label="📥 Télécharger en Excel",
+        label="📥 Télécharger le Rapport Complet (Excel)",
         data=output.getvalue(),
-        file_name=f"Rapport_MIEDA_{region_sel}_{mois_sel}.xlsx",
+        file_name=f"Rapport_Detaille_MIEDA_{region_sel}_{mois_sel}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
