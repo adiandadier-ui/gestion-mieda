@@ -53,12 +53,22 @@ with tab_dime:
     dime_mois = st.number_input("Dîme du mois:", value=2421800)
     loyer_temple = st.number_input("Loyer temple:", value=240000)
     loyer_res = st.number_input("Loyer résidence Pasteurs:", value=510000)
-    # ... (autres champs inchangés)
+    autres_ch = st.number_input("Autres charges:", value=0)
+    frais_transf = st.number_input("Frais de transfert:", value=0)
+    frais_transp = st.number_input("Frais de transport:", value=0)
+    perdiem = st.number_input("Perdiem Gestion:", value=0)
+    autres_ress = st.number_input("Autres ressources/appro.:", value=0)
 
-with tab_past:
-    st.write(f"### Soutiens pour la région : {region_sel}")
-    # Filtrage dynamique depuis la mémoire session_state
-    p_reg = {k: v for k, v in st.session_state.base_pasteurs.items() if v[2] == region_sel}
+with tab_offr:
+    st.number_input("Offrandes ordinaires:", value=0)
+    st.number_input("Dépenses sur offr. ord.:", value=0)
+    st.number_input("1ère Action de Grâce:", value=0)
+    st.number_input("Soutien aux districts:", value=0)
+    st.number_input("Soutien Inspectorat:", value=0)
+    st.number_input("Soutien Aff. Sociales:", value=0)
+    st.number_input("Administration:", value=0)
+    st.number_input("Evangélisation:", value=0)
+    st.number_input("2ème Action de Grâce:", value=0)
     
     if not p_reg:
         st.warning("Aucun pasteur enregistré dans cette région.")
