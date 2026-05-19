@@ -33,7 +33,8 @@ if 'base_menu' not in st.session_state:
 
 if 'historique_ventes' not in st.session_state:
     st.session_state.historique_ventes = pd.DataFrame(columns=[
-        'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 'Total_FCFA', 'Statut', 'Ref_Bon'
+        'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
+        'Remise_Pourcent', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
     ])
 
 if 'historique_bons' not in st.session_state:
@@ -64,10 +65,10 @@ def consolider_stocks_et_marges():
 df_global = consolider_stocks_et_marges()
 
 # ==========================================
-# VUE 1 : PRISE DE COMMANDE
+# VUE 1 : PRISE DE COMMANDE AVEC REMISE
 # ==========================================
 def vue_prise_commande():
-    st.subheader("📝 Écran Serveur : Prise de Commande Rapide")
+    st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Remises")
     col1, col2 = st.columns([1, 1])
     
     with col1:
@@ -79,6 +80,19 @@ def vue_prise_commande():
             item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
             quantite = st.number_input("Quantité :", min_value=1, value=1)
             
+            st.markdown("---")
+            st.markdown("##### 🎁 Option de Remise (Optionnel)")
+            opt_remise = st.selectbox("Taux de remise à appliquer :", [0, 5, 10, 15, 20, "Autre (Saisie manuelle)"])
+            
+            if opt_remise == "Autre (Saisie manuelle)":
+                taux_remise = st.number_input("Entrez le taux de remise (%) :", min_value=0, max_value=100, value=0)
+            else:
+                taux_remise = int(opt_remise)
+                
+            motif_remise = "Aucun"
+            if taux_remise > 0:
+                motif_remise = st.selectbox("Motif / Profil bénéficiaire :", ["Client Fidèle ⭐", "Ami Spécial 🤝", "Geste Commercial 🛠️"])
+            
             if st.form_submit_button("Envoyer la commande 🚀"):
                 code_art = dict_menu[item_choisi]
                 item_details = df_global[df_global['Code_Article'] == code_art].iloc[0]
@@ -87,18 +101,27 @@ def vue_prise_commande():
                     st.error(f"❌ Stock insuffisant ! ({int(item_details['Quantite_Dispo'])} disponibles au stock {item_details['Categorie']})")
                 else:
                     px_vente_unitaire = item_details['Prix_Vente_FCFA']
+                    # Calcul du total brut puis application de la réduction
+                    total_brut = quantite * px_vente_unitaire
+                    total_net_remise = total_brut * (1 - (taux_remise / 100))
+                    
                     nouvelle_ligne = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         'Table': table_choisie, 'Code_Article': code_art, 'Type_Flux': 'Sortie',
                         'Quantite': quantite, 'Prix_Unitaire_Flux': px_vente_unitaire, 
-                        'Total_FCFA': quantite * px_vente_unitaire, 'Statut': 'En cours', 'Ref_Bon': '-'
+                        'Remise_Pourcent': taux_remise, 'Total_FCFA': total_net_remise, 
+                        'Motif_Remise': motif_remise, 'Statut': 'En cours', 'Ref_Bon': '-'
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
-                    st.success(f"Commande envoyée pour la {table_choisie} !")
+                    st.success(f"Commande envoyée pour la {table_choisie} ! (Remise: {taux_remise}%)")
                     st.rerun()
                     
     with col2:
-        st.info("💡 Les serveurs saisissent uniquement les commandes clients. Les marges et les stocks se calculent en arrière-plan à la caisse.")
+        st.info("""
+        💡 **Note sur la gestion des remises :**
+        - Le prix affiché sur l'addition finale de la table prendra directement en compte le rabais.
+        - Le motif sera tracé dans le journal des flux pour les audits de fin de journée.
+        """)
 
 # ==========================================
 # VUE 2 : COMMANDES ET ADDITIONS (ÉCRAN CAISSE)
@@ -113,7 +136,7 @@ def vue_commandes_additions():
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
     
-    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal des Flux"])
+    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal des Flux & Remises"])
     
     with tabs_caisse[0]:
         if df_actives.empty:
@@ -123,15 +146,15 @@ def vue_commandes_additions():
             table_selectionnee = st.selectbox("Sélectionner la table à encaisser :", tables_occupees)
             df_table_strict = df_actives[df_actives['Table'] == table_selectionnee]
             
-            st.dataframe(df_table_strict[['Heure', 'Categorie', 'Designation', 'Quantite', 'Prix_Unitaire_Flux', 'Total_FCFA']], use_container_width=True, hide_index=True)
+            st.dataframe(df_table_strict[['Heure', 'Categorie', 'Designation', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Total_FCFA', 'Motif_Remise']], use_container_width=True, hide_index=True)
             total_addition = df_table_strict['Total_FCFA'].sum()
-            st.markdown(f"## **Total à Payer : {total_addition:,.0f} FCFA**")
+            st.markdown(f"## **Total Net à Payer : {total_addition:,.0f} FCFA**")
             
             col_btn1, col_btn2 = st.columns(2)
             if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
-                st.success(f"La {table_selectionnee} a été réglée. Marge enregistrée !")
+                st.success(f"La {table_selectionnee} a été réglée. Marge recalculée !")
                 st.rerun()
                 
             if col_btn2.button(f"Annuler la commande de la {table_selectionnee} ❌"):
@@ -170,7 +193,8 @@ def vue_stocks_appro():
                     ligne_appro = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 'Code_Article': code_r,
                         'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
-                        'Total_FCFA': qte_recue * px_achat_unit, 'Statut': 'Stocké', 'Ref_Bon': ref_bon
+                        'Remise_Pourcent': 0, 'Total_FCFA': qte_recue * px_achat_unit, 'Motif_Remise': 'Aucun',
+                        'Statut': 'Stocké', 'Ref_Bon': ref_bon
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
                     
@@ -203,7 +227,8 @@ def vue_stocks_appro():
                     ligne_appro = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_BAR', 'Code_Article': code_r,
                         'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
-                        'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Statut': 'Stocké', 'Ref_Bon': ref_bon
+                        'Remise_Pourcent': 0, 'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Motif_Remise': 'Aucun',
+                        'Statut': 'Stocké', 'Ref_Bon': ref_bon
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
                     
@@ -224,7 +249,6 @@ def vue_stocks_appro():
             bon_selectionne = st.selectbox("Choisir un Bon pour contrôle physique :", list(st.session_state.historique_bons.keys())[::-1])
             b = st.session_state.historique_bons[bon_selectionne]
             
-            # --- STRUCTURE HTML DU BON CONFIGURÉE POUR L'IMPRESSION ---
             code_html_bon = f"""
             <div id="print-area" style="border:2px solid #000; padding:20px; background-color:#fff; color:#000; font-family:monospace; max-width:600px; margin:auto;">
                 <h2 style="text-align:center; margin:0;">EASYGEST RESTO - BON D'ENTRÉE VALORISÉ</h2>
@@ -260,15 +284,10 @@ def vue_stocks_appro():
                 </div>
             </div>
             """
-            
-            # Affichage du bon à l'écran
             st.markdown(code_html_bon, unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # --- INTEGRATION DU BOUTON D'IMPRESSION PHYSIQUE (JAVASCRIPT) ---
-            # Crée un bouton Streamlit classique
-            if st.button("🖨️ Imprimer ce Bon d'Entrée", type="primary", use_container_width=True):
-                # Script JS injecté de manière invisible pour lancer l'impression de la zone ciblée
+            if st.button("🖨 Imprimer ce Bon d'Entrée", type="primary", use_container_width=True):
                 js_script = f"""
                 <script>
                     var printWindow = window.open('', '_blank', 'height=600,width=800');
@@ -285,10 +304,10 @@ def vue_stocks_appro():
                 st.success("Ordre d'impression envoyé à votre système !")
 
 # ==========================================
-# VUE 4 : FINANCES ET MARGES
+# VUE 4 : FINANCES AVEC IMPACT DES REMISES
 # ==========================================
 def vue_finances_marges():
-    st.subheader("📊 Compte d'Exploitation & Marges Brutes")
+    st.subheader("📊 Compte d'Exploitation & Marges Réelles (Après Remises)")
     df_ventes_payees = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
     
     if df_ventes_payees.empty:
@@ -308,11 +327,20 @@ def vue_finances_marges():
     taux_marge_global = (marge_globale / ca_total) * 100 if ca_total > 0 else 0
     
     f1, f2, f3 = st.columns(3)
-    f1.metric("Chiffre d'Affaires Réalisé", f"{ca_total:,.0f} FCFA")
+    f1.metric("Chiffre d'Affaires Net encaissé", f"{ca_total:,.0f} FCFA")
     f2.metric("Coût des Matières (Achats)", f"{cout_achats_total:,.0f} FCFA", delta="-Dépenses", delta_color="inverse")
-    f3.metric("Marge d'Exploitation Directe", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
+    f3.metric("Marge Réelle d'Exploitation", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
     
     st.markdown("---")
+    st.markdown("### 📋 Analyse des remises accordées")
+    df_remises_octroyees = df_ventes_payees[df_ventes_payees['Remise_Pourcent'] > 0]
+    if not df_remises_octroyees.empty:
+        st.dataframe(df_remises_octroyees.merge(st.session_state.base_menu[['Code_Article', 'Designation']], on='Code_Article')[['Heure', 'Table', 'Designation', 'Quantite', 'Remise_Pourcent', 'Motif_Remise', 'Total_FCFA']], use_container_width=True, hide_index=True)
+    else:
+        st.info("Aucune remise n'a été accordée sur les ventes clôturées.")
+
+    st.markdown("---")
+    st.markdown("### 📈 Rentabilité par Article (Net de Remise)")
     st.dataframe(df_calc_marge[['Designation', 'Quantite', 'Total_FCFA', 'Cout_Total_Achat', 'Marge_Brute_FCFA', 'Taux_Marge_%']], use_container_width=True, hide_index=True)
 
 # ==========================================
@@ -320,18 +348,13 @@ def vue_finances_marges():
 # ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration Technique de la Carte & Menu")
-    
-    action = st.radio("Sélectionnez l'action de gestion de la carte :", 
-                      ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit Inutilisé"])
+    action = st.radio("Sélectionnez l'action de gestion de la carte :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit Inutilisé"])
     st.markdown("---")
     
-    # --- ACTION 1 : AJOUT DE PRODUIT ---
     if action == "➕ Ajouter un Nouveau Produit":
         with st.form("form_ajout_produit", clear_on_submit=True):
-            st.markdown("#### Création d'une nouvelle fiche article")
             new_designation = st.text_input("Désignation / Nom du plat ou de la boisson :")
             new_categorie = st.selectbox("Famille d'article :", ["Cuisine", "Bar"])
-            
             c1, c2, c3 = st.columns(3)
             new_stock_init = c1.number_input("Stock Initial de départ :", min_value=0, value=10)
             new_stock_min = c2.number_input("Seuil d'Alerte Stock Minimum :", min_value=1, value=5)
@@ -344,30 +367,24 @@ def vue_configuration_carte():
                 else:
                     prochain_id = len(st.session_state.base_menu) + 1
                     new_code = f"MENU{prochain_id:03d}"
-                    
                     nouvel_article = pd.DataFrame([{
                         'Code_Article': new_code, 'Designation': new_designation, 'Categorie': new_categorie,
                         'Stock_Initial': new_stock_init, 'Stock_Minimum': new_stock_min, 
                         'Prix_Vente_FCFA': new_prix_vente, 'Prix_Achat_Moyen_FCFA': new_prix_achat
                     }])
-                    
                     st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvel_article], ignore_index=True)
                     st.success(f"Article '{new_designation}' ajouté avec succès sous la référence {new_code} !")
                     st.rerun()
 
-    # --- ACTION 2 : MODIFICATION DE PRODUIT ---
     elif action == "✏️ Modifier un Produit Existant":
         dict_edit = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
         produit_a_modifier = st.selectbox("Sélectionner le produit à réajuster :", list(dict_edit.keys()))
-        
         code_strict = dict_edit[produit_a_modifier]
         infos_actuelles = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_strict].iloc[0]
         
         with st.form("form_edit_produit"):
-            st.markdown(f"#### Modification de l'article : {produit_a_modifier} ({code_strict})")
             edit_designation = st.text_input("Modifier le nom de l'article :", value=infos_actuelles['Designation'])
             edit_categorie = st.selectbox("Modifier la Famille :", ["Cuisine", "Bar"], index=0 if infos_actuelles['Categorie'] == 'Cuisine' else 1)
-            
             col1, col2 = st.columns(2)
             edit_prix_vente = col1.number_input("Nouveau Prix de Vente (FCFA) :", min_value=0, value=int(infos_actuelles['Prix_Vente_FCFA']), step=100)
             edit_stock_min = col2.number_input("Nouveau Stock Minimum d'Alerte :", min_value=1, value=int(infos_actuelles['Stock_Minimum']))
@@ -381,11 +398,8 @@ def vue_configuration_carte():
                 st.success(f"Mise à jour effectuée pour '{edit_designation}' !")
                 st.rerun()
 
-    # --- ACTION 3 : SUPPRESSION SÉCURISÉE ---
     elif action == "❌ Supprimer un Produit Inutilisé":
         st.markdown("#### Suppression définitive d'une référence")
-        st.warning("⚠️ Règle stricte : Un produit ayant déjà fait l'objet d'une vente active ne peut pas être supprimé afin de préserver l'historique comptable.")
-        
         if not st.session_state.historique_ventes.empty:
             codes_utilises = set(st.session_state.historique_ventes[st.session_state.historique_ventes['Type_Flux'] == 'Sortie']['Code_Article'].unique())
         else:
@@ -395,9 +409,7 @@ def vue_configuration_carte():
         for _, r in st.session_state.base_menu.iterrows():
             deja_vendu = r['Code_Article'] in codes_utilises
             label = f"{r['Designation']} ({r['Categorie']}) — {'🔒 Vendu (Bloqué)' if deja_vendu else '🔓 Jamais vendu (Supprimable)'}"
-            options_suppression[label] = {
-                'code': r['Code_Article'], 'bloque': deja_vendu, 'nom': r['Designation']
-            }
+            options_suppression[label] = {'code': r['Code_Article'], 'bloque': deja_vendu, 'nom': r['Designation']}
             
         choix_label = st.selectbox("Choisir l'article à supprimer :", list(options_suppression.keys()))
         info_choix = options_suppression[choix_label]
@@ -405,8 +417,6 @@ def vue_configuration_carte():
         if info_choix['bloque']:
             st.error(f"❌ Impossible de supprimer '{info_choix['nom']}'. Cet article possède des données de vente rattachées.")
         else:
-            st.info(f"✅ Validation : '{info_choix['nom']}' n'a jamais été commandé. Vous pouvez le retirer du menu en toute sécurité.")
-            
             with st.form("form_suppression_strict"):
                 st.write(f"Confirmez-vous la suppression définitive de : **{info_choix['nom']}** ?")
                 if st.form_submit_button("Confirmer la suppression définitive 🗑️", type="primary"):
