@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import os
 from datetime import datetime
+import streamlit.components.v1 as components
 
 # 1. Configuration de l'interface
 st.set_page_config(
@@ -223,27 +224,65 @@ def vue_stocks_appro():
             bon_selectionne = st.selectbox("Choisir un Bon pour contrôle physique :", list(st.session_state.historique_bons.keys())[::-1])
             b = st.session_state.historique_bons[bon_selectionne]
             
-            st.markdown(f"""
-            <div style="border:2px solid #000; padding:20px; background-color:#fff; color:#000; font-family:monospace;">
+            # --- STRUCTURE HTML DU BON CONFIGURÉE POUR L'IMPRESSION ---
+            code_html_bon = f"""
+            <div id="print-area" style="border:2px solid #000; padding:20px; background-color:#fff; color:#000; font-family:monospace; max-width:600px; margin:auto;">
                 <h2 style="text-align:center; margin:0;">EASYGEST RESTO - BON D'ENTRÉE VALORISÉ</h2>
                 <p style="text-align:center;"><b>N° BON : {bon_selectionne}</b></p>
                 <hr style="border-top: 1px dashed #000;">
                 <p><b>Date :</b> {b['Date']} | <b>Section :</b> {b['Type']}</p>
                 <p><b>Fournisseur :</b> {b['Fournisseur']}</p>
                 <hr style="border-top: 1px dashed #000;">
-                <table style="width:100%; text-align:left;">
-                    <tr><th>Désignation</th><th>Qté</th><th>P.U Achat</th><th style="text-align:right;">Total Cost</th></tr>
-                    <tr><td>{b['Article']}</td><td>{b['Quantite']}</td><td>{b['Prix_Unitaire']:,} F</td><td style="text-align:right;">{b['Total']:,} FCFA</td></tr>
+                <table style="width:100%; text-align:left; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px dashed #000;">
+                            <th>Désignation</th>
+                            <th>Qté</th>
+                            <th>P.U Achat</th>
+                            <th style="text-align:right;">Total Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>{b['Article']}</td>
+                            <td>{b['Quantite']}</td>
+                            <td>{b['Prix_Unitaire']:,} F</td>
+                            <td style="text-align:right;">{b['Total']:,} FCFA</td>
+                        </tr>
+                    </tbody>
                 </table>
                 <hr style="border-top: 1px dashed #000;">
-                <h4 style="text-align:right;">MONTANT TOTAL ACHAT : {b['Total']:,} FCFA</h4>
+                <h4 style="text-align:right; margin-top:10px;">MONTANT TOTAL ACHAT : {b['Total']:,} FCFA</h4>
                 <br><br>
                 <div style="display: flex; justify-content: space-between;">
                     <div><b>Signature Livreur :</b><br><br>___________________</div>
                     <div style="text-align:right;"><b>Visa Caisse / Contrôle :</b><br><br>___________________</div>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """
+            
+            # Affichage du bon à l'écran
+            st.markdown(code_html_bon, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # --- INTEGRATION DU BOUTON D'IMPRESSION PHYSIQUE (JAVASCRIPT) ---
+            # Crée un bouton Streamlit classique
+            if st.button("🖨️ Imprimer ce Bon d'Entrée", type="primary", use_container_width=True):
+                # Script JS injecté de manière invisible pour lancer l'impression de la zone ciblée
+                js_script = f"""
+                <script>
+                    var printWindow = window.open('', '_blank', 'height=600,width=800');
+                    printWindow.document.write('<html><head><title>Impression Bon d-Entree</title>');
+                    printWindow.document.write('</head><body>');
+                    printWindow.document.write(`{code_html_bon}`);
+                    printWindow.document.write('</body></html>');
+                    printWindow.document.close();
+                    printWindow.focus();
+                    setTimeout(function() {{ printWindow.print(); printWindow.close(); }}, 500);
+                </script>
+                """
+                components.html(js_script, height=0, width=0)
+                st.success("Ordre d'impression envoyé à votre système !")
 
 # ==========================================
 # VUE 4 : FINANCES ET MARGES
@@ -342,43 +381,37 @@ def vue_configuration_carte():
                 st.success(f"Mise à jour effectuée pour '{edit_designation}' !")
                 st.rerun()
 
-    # --- ACTION 3 : SUPPRESSION SÉCURISÉE (NOUVELLE OPTION) ---
+    # --- ACTION 3 : SUPPRESSION SÉCURISÉE ---
     elif action == "❌ Supprimer un Produit Inutilisé":
         st.markdown("#### Suppression définitive d'une référence")
-        st.warning("⚠️ Règle stricte : Un produit ayant déjà fait l'objet d'une vente active (qu'elle soit payée ou en cours) ne peut pas être supprimé afin de préserver l'historique comptable.")
+        st.warning("⚠️ Règle stricte : Un produit ayant déjà fait l'objet d'une vente active ne peut pas être supprimé afin de préserver l'historique comptable.")
         
-        # Liste de tous les codes articles présents dans l'historique des ventes
         if not st.session_state.historique_ventes.empty:
             codes_utilises = set(st.session_state.historique_ventes[st.session_state.historique_ventes['Type_Flux'] == 'Sortie']['Code_Article'].unique())
         else:
             codes_utilises = set()
             
-        # Création de la liste des choix avec indicateur de statut
         options_suppression = {}
         for _, r in st.session_state.base_menu.iterrows():
             deja_vendu = r['Code_Article'] in codes_utilises
             label = f"{r['Designation']} ({r['Categorie']}) — {'🔒 Vendu (Bloqué)' if deja_vendu else '🔓 Jamais vendu (Supprimable)'}"
             options_suppression[label] = {
-                'code': r['Code_Article'],
-                'bloque': deja_vendu,
-                'nom': r['Designation']
+                'code': r['Code_Article'], 'bloque': deja_vendu, 'nom': r['Designation']
             }
             
         choix_label = st.selectbox("Choisir l'article à supprimer :", list(options_suppression.keys()))
         info_choix = options_suppression[choix_label]
         
         if info_choix['bloque']:
-            st.error(f"❌ Impossible de supprimer '{info_choix['nom']}'. Cet article possède des données de vente rattachées dans l'historique comptable.")
+            st.error(f"❌ Impossible de supprimer '{info_choix['nom']}'. Cet article possède des données de vente rattachées.")
         else:
             st.info(f"✅ Validation : '{info_choix['nom']}' n'a jamais été commandé. Vous pouvez le retirer du menu en toute sécurité.")
             
-            # Formulaire de confirmation finale
             with st.form("form_suppression_strict"):
                 st.write(f"Confirmez-vous la suppression définitive de : **{info_choix['nom']}** ?")
                 if st.form_submit_button("Confirmer la suppression définitive 🗑️", type="primary"):
-                    # Filtrage du référentiel pour exclure l'article supprimé
                     st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != info_choix['code']].reset_index(drop=True)
-                    st.success(f"L'article '{info_choix['nom']}' a été retiré de la carte avec succès.")
+                    st.success(f"L'article '{info_choix['nom']}' a été retiré de la carte.")
                     st.rerun()
 
 # 6. Système de Navigation Multi-pages
