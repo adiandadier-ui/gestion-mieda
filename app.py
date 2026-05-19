@@ -34,7 +34,7 @@ if 'base_menu' not in st.session_state:
 if 'historique_ventes' not in st.session_state:
     st.session_state.historique_ventes = pd.DataFrame(columns=[
         'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
-        'Remise_Pourcent', 'Accompagnement', 'Portion_Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
+        'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
     ])
 
 if 'historique_bons' not in st.session_state:
@@ -65,7 +65,7 @@ def consolider_stocks_et_marges():
 df_global = consolider_stocks_et_marges()
 
 # ==========================================
-# VUE 1 : PRISE DE COMMANDE AVEC PORTION ACCOMPAGNEMENT
+# VUE 1 : PRISE DE COMMANDE SANS LE PORTIONNAGE
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
@@ -88,19 +88,13 @@ def vue_prise_commande():
             # Détection de la catégorie
             categorie_active = dict_categories[item_choisi] if item_choisi else "Cuisine"
             
-            # --- AJOUT DE LA ZONE DE REMPLISSAGE DES PORTIONS (ENTRE ARTICLE ET QUANTITÉ) ---
+            # --- ACCOMPAGNEMENT GRATUIT UNIQUEMENT (SANS PORTION) ---
             accomp_choisi = "-"
-            portion_accomp = "-"
             if categorie_active == "Cuisine":
                 st.markdown("👇 *Options Spécifiques Cuisine*")
                 accomp_choisi = st.selectbox(
                     "Choisir l'accompagnement gratuit :", 
                     ["Alloco", "Attiéké", "Frites de Pomme de terre", "Riz Blanc", "Riz Gras", "Sans accompagnement"]
-                )
-                # Zone demandée : Saisie de la portion / dosage de l'accompagnement
-                portion_accomp = st.selectbox(
-                    "Portion / Spécification de l'accompagnement :",
-                    ["1 Portion Normale", "1.5 Portion (Généreux)", "Double Portion (2x)", "Demi-Portion (Léger)", "Bien pimenté", "Sans Piment"]
                 )
                 st.markdown("---")
             
@@ -134,7 +128,6 @@ def vue_prise_commande():
                         'Table': table_choisie, 'Code_Article': code_art, 'Type_Flux': 'Sortie',
                         'Quantite': quantite, 'Prix_Unitaire_Flux': px_vente_unitaire, 
                         'Remise_Pourcent': taux_remise, 'Accompagnement': accomp_choisi, 
-                        'Portion_Accompagnement': portion_accomp,
                         'Total_FCFA': total_net_remise, 'Motif_Remise': motif_remise, 
                         'Statut': 'En cours', 'Ref_Bon': '-'
                     }])
@@ -144,8 +137,9 @@ def vue_prise_commande():
                     
     with col2:
         st.info(f"""
-        💡 **Note sur l'emplacement des Portions :**
-        - Conformément à vos instructions, la spécification de la portion d'accompagnement s'insère directement après la sélection de l'article pour que le serveur valide le choix de l'accompagnement avant d'indiquer le nombre d'assiettes total.
+        💡 **Prise de commande simplifiée :**
+        - Le volet de portionnement a été retiré pour accélérer la saisie.
+        - Le choix de l'accompagnement gratuit reste disponible pour guider la préparation en cuisine.
         """)
 
 # ==========================================
@@ -171,10 +165,10 @@ def vue_commandes_additions():
             table_selectionnee = st.selectbox("Sélectionner la table à encaisser :", tables_occupees)
             df_table_strict = df_actives[df_actives['Table'] == table_selectionnee].copy()
             
-            # Affichage combiné : Nom du plat + Accompagnement + Portion choisie
+            # Affichage combiné : Nom du plat + Accompagnement
             def formater_libelle(row):
                 if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans accompagnement":
-                    return f"{row['Designation']} ({row['Accompagnement']} - {row['Portion_Accompagnement']})"
+                    return f"{row['Designation']} (Acc: {row['Accompagnement']})"
                 return row['Designation']
                 
             df_table_strict['Désignation Produit'] = df_table_strict.apply(formater_libelle, axis=1)
@@ -225,7 +219,7 @@ def vue_stocks_appro():
                     ligne_appro = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 'Code_Article': code_r,
                         'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
-                        'Remise_Pourcent': 0, 'Accompagnement': '-', 'Portion_Accompagnement': '-',
+                        'Remise_Pourcent': 0, 'Accompagnement': '-', 
                         'Total_FCFA': qte_recue * px_achat_unit, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
@@ -259,7 +253,7 @@ def vue_stocks_appro():
                     ligne_appro = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_BAR', 'Code_Article': code_r,
                         'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
-                        'Remise_Pourcent': 0, 'Accompagnement': '-', 'Portion_Accompagnement': '-',
+                        'Remise_Pourcent': 0, 'Accompagnement': '-', 
                         'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
@@ -365,7 +359,7 @@ def vue_finances_marges():
     
     st.markdown("---")
     st.markdown("### 📋 Analyse détaillée des ventes et options d'accompagnements")
-    st.dataframe(df_ventes_payees.merge(st.session_state.base_menu[['Code_Article', 'Designation']], on='Code_Article')[['Heure', 'Table', 'Designation', 'Quantite', 'Accompagnement', 'Portion_Accompagnement', 'Remise_Pourcent', 'Motif_Remise', 'Total_FCFA']], use_container_width=True, hide_index=True)
+    st.dataframe(df_ventes_payees.merge(st.session_state.base_menu[['Code_Article', 'Designation']], on='Code_Article')[['Heure', 'Table', 'Designation', 'Quantite', 'Accompagnement', 'Remise_Pourcent', 'Motif_Remise', 'Total_FCFA']], use_container_width=True, hide_index=True)
 
 # ==========================================
 # VUE 5 : CONFIGURATION DE LA CARTE
