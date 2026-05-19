@@ -26,19 +26,19 @@ def charger_donnees_excel():
             if df.empty or len(df.columns) == 0:
                 return generer_donnees_secours(), f"ℹ️ Le fichier '{nom_fichier}' semble vide. Mode démo activé."
             
-            # Convertir tous les noms de colonnes en chaînes de caractères propres (sans espaces)
+            # Nettoyage des noms de colonnes (retrait des espaces inutiles)
             df.columns = [str(c).strip() for c in df.columns]
             
-            # Mapping flexible pour renommer vos colonnes existantes selon ce qui est trouvé
+            # Mapping flexible pour s'adapter aux noms de vos colonnes Excel
             mapping = {
                 'Code': 'Code_Article', 'Article': 'Designation', 'Produit': 'Designation', 'Désignation': 'Designation',
-                'Qte': 'Quantite_Dispo', 'Stock': 'Quantite_Dispo', 'Quantité': 'Quantite_Dispo',
+                'Qte': 'Quantite_Dispo', 'Stock': 'Quantite_Dispo', 'Quantité': 'Quantite_Dispo', 'Quantite': 'Quantite_Dispo',
                 'Prix': 'Prix_Unitaire_FCFA', 'PU': 'Prix_Unitaire_FCFA', 'Prix Unitaire': 'Prix_Unitaire_FCFA',
                 'Stock Minimum': 'Stock_Minimum', 'Minimum': 'Stock_Minimum', 'Site': 'Site', 'Secteur': 'Site'
             }
             df = df.rename(columns=mapping)
             
-            # --- VÉRIFICATION STRICTE ET SÉCURISATION DES COLONNES ---
+            # --- VÉRIFICATION ET SÉCURISATION DES COLONNES INDISPENSABLES ---
             if 'Code_Article' not in df.columns: 
                 df['Code_Article'] = [f"ART{i+1:03d}" for i in range(len(df))]
                 
@@ -48,23 +48,28 @@ def charger_donnees_excel():
                 else:
                     df['Designation'] = "Article Sans Nom"
                     
-            # Si la colonne 'Site' n'existe pas, on la crée pour éviter le KeyError
             if 'Site' not in df.columns: 
-                # On attribue 'Abatta' par défaut à toutes les lignes pour éviter le plantage
-                df['Site'] = 'Abatta'  
+                df['Site'] = 'Abatta'  # Par défaut si non spécifié
                 
-            if 'Quantite_Dispo' not in df.columns: df['Quantite_Dispo'] = 0
-            if 'Stock_Minimum' not in df.columns: df['Stock_Minimum'] = 5
-            if 'Prix_Unitaire_FCFA' not in df.columns: df['Prix_Unitaire_FCFA'] = 0
+            if 'Quantite_Dispo' not in df.columns: 
+                df['Quantite_Dispo'] = 0
+                
+            if 'Stock_Minimum' not in df.columns: 
+                df['Stock_Minimum'] = 5
+                
+            if 'Prix_Unitaire_FCFA' not in df.columns: 
+                # Si vous n'avez pas de colonne prix, on met 1000 par défaut pour avoir une valeur de démo
+                df['Prix_Unitaire_FCFA'] = 1000  
             
-            # Nettoyage et conversion forcée en formats numériques
+            # Nettoyage des données numériques (force la conversion et remplace les lignes vides par 0)
             df['Quantite_Dispo'] = pd.to_numeric(df['Quantite_Dispo'], errors='coerce').fillna(0)
             df['Stock_Minimum'] = pd.to_numeric(df['Stock_Minimum'], errors='coerce').fillna(5)
             df['Prix_Unitaire_FCFA'] = pd.to_numeric(df['Prix_Unitaire_FCFA'], errors='coerce').fillna(0)
             
-            # Calcul de la valeur financière
+            # CRÉATION SÉCURISÉE DE LA COLONNE QUI CAUSAIT L'ERREUR
             df['Valeur_Stock_FCFA'] = df['Quantite_Dispo'] * df['Prix_Unitaire_FCFA']
-            return df, f"✅ Données chargées avec succès depuis {nom_fichier}"
+            
+            return df, f"✅ Vos données réelles de {nom_fichier} ont été chargées avec succès !"
             
         except Exception as e:
             return generer_donnees_secours(), f"⚠️ Erreur de traitement Excel : {str(e)}. Mode démo activé."
@@ -94,10 +99,10 @@ df_global = st.session_state.df_stocks.copy()
 
 # 3. Tri et Analyse ABC / Pareto (Tri des valeurs par ordre décroissant)
 def appliquer_analyse_abc(df_input):
-    if df_input.empty:
+    if df_input.empty or 'Valeur_Stock_FCFA' not in df_input.columns:
         return df_input
     
-    # Tri impératif par valeur financière décroissante
+    # Tri impératif par valeur financière décroissante dans la colonne
     df_sorted = df_input.sort_values(by='Valeur_Stock_FCFA', ascending=False).reset_index(drop=True)
     
     total_valeur = df_sorted['Valeur_Stock_FCFA'].sum()
@@ -119,7 +124,6 @@ def appliquer_analyse_abc(df_input):
 st.sidebar.title("Easygest v1.0")
 st.sidebar.info(st.session_state.statut_msg)
 
-# Sécurisation de l'extraction de la liste des sites
 if 'Site' in df_global.columns and not df_global.empty:
     liste_sites = ['Tous les sites'] + sorted(list(df_global['Site'].dropna().unique().astype(str)))
 else:
@@ -140,7 +144,9 @@ def vue_dashboard():
     
     kpi1, kpi2, kpi3 = st.columns(3)
     kpi1.metric("Références Articles", f"{len(df_analyse)} produits")
-    kpi2.metric("Valeur Totale Stock", f"{df_analyse['Valeur_Stock_FCFA'].sum():,.0f} FCFA")
+    
+    valeur_totale = df_analyse['Valeur_Stock_FCFA'].sum() if 'Valeur_Stock_FCFA' in df_analyse.columns else 0
+    kpi2.metric("Valeur Totale Stock", f"{valeur_totale:,.0f} FCFA")
     
     alertes = df_analyse[df_analyse['Quantite_Dispo'] <= df_analyse['Stock_Minimum']].shape[0] if 'Stock_Minimum' in df_analyse.columns else 0
     kpi3.metric("Articles en sous-stock", f"{alertes} alertes", delta="-Attention" if alertes > 0 else "OK", delta_color="inverse" if alertes > 0 else "normal")
@@ -148,18 +154,18 @@ def vue_dashboard():
     st.markdown("---")
     st.markdown("### 📈 Classement Pareto par valeur décroissante")
     
-    if not df_analyse.empty and df_analyse['Valeur_Stock_FCFA'].sum() > 0:
+    if not df_analyse.empty and 'Valeur_Stock_FCFA' in df_analyse.columns and df_analyse['Valeur_Stock_FCFA'].sum() > 0:
         fig = px.bar(
             df_analyse, 
             x='Designation', 
             y='Valeur_Stock_FCFA', 
-            color='Classe_ABC',
+            color='Classe_ABC' if 'Classe_ABC' in df_analyse.columns else None,
             labels={'Valeur_Stock_FCFA': 'Valeur (FCFA)', 'Designation': 'Article'},
             color_discrete_map={'Classe A (Critique)': '#EF553B', 'Classe B (Intermédiaire)': '#FECB52', 'Classe C (Secondaire)': '#636EFA'}
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Aucune donnée financière graphique disponible à afficher pour ce choix.")
+        st.warning("Aucune donnée financière graphique disponible à afficher.")
 
 def vue_stocks():
     st.subheader(f"📦 Registre des Stocks — {site_selectionne}")
@@ -172,7 +178,6 @@ def vue_stocks():
                 return ['background-color: #ffcccc'] * len(row)
             return [''] * len(row)
         
-        # Sélection des colonnes à afficher pour que ce soit propre
         colonnes_affichees = [c for c in ['Code_Article', 'Designation', 'Site', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Unitaire_FCFA', 'Valeur_Stock_FCFA', 'Classe_ABC'] if c in df_analyse.columns]
         
         st.dataframe(
