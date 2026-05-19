@@ -22,39 +22,42 @@ def charger_donnees_excel():
             # Lecture du fichier Excel
             df = pd.read_excel(nom_fichier, sheet_name=0)
             
-            # Si le fichier est vide ou mal lu, on nettoie les colonnes de manière sécurisée
+            # Si le fichier est vide ou mal lu
             if df.empty or len(df.columns) == 0:
                 return generer_donnees_secours(), f"ℹ️ Le fichier '{nom_fichier}' semble vide. Mode démo activé."
             
-            # Convertir tous les noms de colonnes en chaînes de caractères propres
+            # Convertir tous les noms de colonnes en chaînes de caractères propres (sans espaces)
             df.columns = [str(c).strip() for c in df.columns]
             
-            # Mapping flexible pour renommer vos colonnes existantes
+            # Mapping flexible pour renommer vos colonnes existantes selon ce qui est trouvé
             mapping = {
                 'Code': 'Code_Article', 'Article': 'Designation', 'Produit': 'Designation', 'Désignation': 'Designation',
                 'Qte': 'Quantite_Dispo', 'Stock': 'Quantite_Dispo', 'Quantité': 'Quantite_Dispo',
                 'Prix': 'Prix_Unitaire_FCFA', 'PU': 'Prix_Unitaire_FCFA', 'Prix Unitaire': 'Prix_Unitaire_FCFA',
-                'Stock Minimum': 'Stock_Minimum', 'Minimum': 'Stock_Minimum'
+                'Stock Minimum': 'Stock_Minimum', 'Minimum': 'Stock_Minimum', 'Site': 'Site', 'Secteur': 'Site'
             }
             df = df.rename(columns=mapping)
             
-            # Vérification et création sécurisée des colonnes manquantes (SANS utiliser d'index numérique)
+            # --- VÉRIFICATION STRICTE ET SÉCURISATION DES COLONNES ---
             if 'Code_Article' not in df.columns: 
                 df['Code_Article'] = [f"ART{i+1:03d}" for i in range(len(df))]
                 
             if 'Designation' not in df.columns:
-                # Si aucune colonne de désignation n'est trouvée, on utilise la toute première colonne existante par son nom direct
-                premiere_colonne = list(df.columns)[0]
-                df = df.rename(columns={premiere_colonne: 'Designation'})
-                
+                if len(df.columns) > 0:
+                    df = df.rename(columns={df.columns[0]: 'Designation'})
+                else:
+                    df['Designation'] = "Article Sans Nom"
+                    
+            # Si la colonne 'Site' n'existe pas, on la crée pour éviter le KeyError
             if 'Site' not in df.columns: 
-                df['Site'] = 'Abatta'  # Par défaut si absent
+                # On attribue 'Abatta' par défaut à toutes les lignes pour éviter le plantage
+                df['Site'] = 'Abatta'  
                 
             if 'Quantite_Dispo' not in df.columns: df['Quantite_Dispo'] = 0
             if 'Stock_Minimum' not in df.columns: df['Stock_Minimum'] = 5
             if 'Prix_Unitaire_FCFA' not in df.columns: df['Prix_Unitaire_FCFA'] = 0
             
-            # Conversion forcée en formats numériques
+            # Nettoyage et conversion forcée en formats numériques
             df['Quantite_Dispo'] = pd.to_numeric(df['Quantite_Dispo'], errors='coerce').fillna(0)
             df['Stock_Minimum'] = pd.to_numeric(df['Stock_Minimum'], errors='coerce').fillna(5)
             df['Prix_Unitaire_FCFA'] = pd.to_numeric(df['Prix_Unitaire_FCFA'], errors='coerce').fillna(0)
@@ -116,8 +119,9 @@ def appliquer_analyse_abc(df_input):
 st.sidebar.title("Easygest v1.0")
 st.sidebar.info(st.session_state.statut_msg)
 
+# Sécurisation de l'extraction de la liste des sites
 if 'Site' in df_global.columns and not df_global.empty:
-    liste_sites = ['Tous les sites'] + sorted(list(df_global['Site'].unique().astype(str)))
+    liste_sites = ['Tous les sites'] + sorted(list(df_global['Site'].dropna().unique().astype(str)))
 else:
     liste_sites = ['Tous les sites']
 
@@ -168,8 +172,11 @@ def vue_stocks():
                 return ['background-color: #ffcccc'] * len(row)
             return [''] * len(row)
         
+        # Sélection des colonnes à afficher pour que ce soit propre
+        colonnes_affichees = [c for c in ['Code_Article', 'Designation', 'Site', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Unitaire_FCFA', 'Valeur_Stock_FCFA', 'Classe_ABC'] if c in df_analyse.columns]
+        
         st.dataframe(
-            df_analyse.style.apply(colorer_alertes, axis=1),
+            df_analyse[colonnes_affichees].style.apply(colorer_alertes, axis=1),
             use_container_width=True,
             hide_index=True
         )
