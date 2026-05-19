@@ -168,4 +168,59 @@ def vue_mouvements():
                 code_art_strict = options_articles[article_choisi]
                 
                 # Vérification de sécurité pour éviter les stocks négatifs lors d'une sortie
-                stock_actuel = df_global
+                stock_actuel = df_global[df_global['Code_Article'] == code_art_strict]['Quantite_Dispo'].values[0]
+                if type_mvt == 'Sortie' and quantite_mvt > stock_actuel:
+                    st.error(f"❌ Action refusée : Stock insuffisant ({stock_actuel} dispo) pour valider cette sortie de {quantite_mvt} unités.")
+                else:
+                    # Enregistrement du mouvement dans le DataFrame historique
+                    nouveau_mvt = pd.DataFrame([{
+                        'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        'Code_Article': code_art_strict,
+                        'Type_Mouvement': type_mvt,
+                        'Quantite': quantite_mvt,
+                        'Motif': motif_mvt
+                    }])
+                    st.session_state.historique_mouvements = pd.concat([st.session_state.historique_mouvements, nouveau_mvt], ignore_index=True)
+                    st.success(f"✔️ {type_mvt} de {quantite_mvt} unités enregistrée avec succès !")
+                    st.rerun()
+
+    with col_Filtre_site:
+        st.markdown("#### ⏳ Historique des derniers mouvements enregistrés")
+        if st.session_state.historique_mouvements.empty:
+            st.info("Aucun mouvement enregistré pour le moment.")
+        else:
+            # Jointure pour afficher la désignation de l'article plutôt que juste son code
+            df_historique_affiche = st.session_state.historique_mouvements.merge(
+                st.session_state.base_articles[['Code_Article', 'Designation', 'Site']], on='Code_Article', how='left'
+            )
+            # Tri pour voir le plus récent en premier
+            df_historique_affiche = df_historique_affiche.sort_index(ascending=False)
+            
+            st.dataframe(
+                df_historique_affiche[['Date', 'Site', 'Code_Article', 'Designation', 'Type_Mouvement', 'Quantite', 'Motif']],
+                use_container_width=True, hide_index=True
+            )
+
+def vue_stocks():
+    st.subheader(f"📦 Registre Récapitulatif des Stocks — {site_selectionne}")
+    
+    if df_analyse.empty:
+        st.warning("Aucune donnée disponible.")
+    else:
+        # Alerte visuelle rouge clair si le stock disponible descend sous le niveau minimum
+        def colorer_alertes(row):
+            return ['background-color: #ffcccc' if row['Quantite_Dispo'] <= row['Stock_Minimum'] else '' for _ in row]
+        
+        st.dataframe(
+            df_analyse[['Code_Article', 'Designation', 'Site', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Unitaire_FCFA', 'Valeur_Stock_FCFA', 'Classe_ABC']].style.apply(colorer_alertes, axis=1),
+            use_container_width=True,
+            hide_index=True
+        )
+
+# 6. Système de Routage
+pg = st.navigation([
+    st.Page(vue_dashboard, title="Tableau de Bord", icon="📊"),
+    st.Page(vue_mouvements, title="Entrées / Sorties", icon="🔄"),
+    st.Page(vue_stocks, title="État des Stocks", icon="📦")
+])
+pg.run()
