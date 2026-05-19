@@ -23,7 +23,7 @@ def charger_carte_restaurant_initiale():
         'Stock_Initial': [30, 100, 40, 120, 80, 200],
         'Stock_Minimum': [5, 15, 8, 24, 10, 36],
         'Prix_Vente_FCFA': [7000, 1500, 2500, 1000, 800, 600],
-        'Prix_Achat_Moyen_FCFA': [3500, 600, 1000, 650, 300, 250] # Prix d'achat de base pour le calcul de marge initial
+        'Prix_Achat_Moyen_FCFA': [3500, 600, 1000, 650, 300, 250]
     })
 
 # --- ENREGISTREMENT DANS LA SESSION STATE (MÉMOIRE VIVE DE L'APP) ---
@@ -143,7 +143,7 @@ def vue_commandes_additions():
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
 # ==========================================
-# VUE 3 : STOCKS & BONS D'ENTREE AVEC PRIX D'ACHAT
+# VUE 3 : STOCKS & BONS D'ENTREE
 # ==========================================
 def vue_stocks_appro():
     st.subheader("📦 Gestion des Stocks & Bons d'Entrée")
@@ -166,7 +166,6 @@ def vue_stocks_appro():
                     code_r = dict_cuisine[art_choisi]
                     ref_bon = f"BON-CUI-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
                     
-                    # Enregistrement du flux d'entrée valorisé
                     ligne_appro = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 'Code_Article': code_r,
                         'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
@@ -174,7 +173,6 @@ def vue_stocks_appro():
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
                     
-                    # Mise à jour du prix d'achat moyen dans le référentiel produit
                     idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
                     st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit
                     
@@ -248,18 +246,16 @@ def vue_stocks_appro():
             """, unsafe_allow_html=True)
 
 # ==========================================
-# VUE 4 : FINANCES ET MARGES D'EXPLOITATION
+# VUE 4 : FINANCES ET MARGES
 # ==========================================
 def vue_finances_marges():
     st.subheader("📊 Compte d'Exploitation & Marges Brutes")
-    
     df_ventes_payees = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
     
     if df_ventes_payees.empty:
-        st.info("Aucun encaissement validé pour le moment. Les données financières s'afficheront après le premier règlement de table.")
+        st.info("Aucun encaissement validé pour le moment.")
         return
         
-    # Analyse financière par produit vendu
     df_calc_marge = df_ventes_payees.groupby('Code_Article').agg({'Quantite': 'sum', 'Total_FCFA': 'sum'}).reset_index()
     df_calc_marge = df_calc_marge.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Prix_Achat_Moyen_FCFA']], on='Code_Article', how='left')
     
@@ -267,33 +263,27 @@ def vue_finances_marges():
     df_calc_marge['Marge_Brute_FCFA'] = df_calc_marge['Total_FCFA'] - df_calc_marge['Cout_Total_Achat']
     df_calc_marge['Taux_Marge_%'] = (df_calc_marge['Marge_Brute_FCFA'] / df_calc_marge['Total_FCFA']) * 100
     
-    # Indicateurs Généraux
     ca_total = df_calc_marge['Total_FCFA'].sum()
     cout_achats_total = df_calc_marge['Cout_Total_Achat'].sum()
     marge_globale = df_calc_marge['Marge_Brute_FCFA'].sum()
     taux_marge_global = (marge_globale / ca_total) * 100 if ca_total > 0 else 0
     
-    f1, f2, f3, f4 = st.columns(4)
+    f1, f2, f3 = st.columns(3)
     f1.metric("Chiffre d'Affaires Réalisé", f"{ca_total:,.0f} FCFA")
     f2.metric("Coût des Matières (Achats)", f"{cout_achats_total:,.0f} FCFA", delta="-Dépenses", delta_color="inverse")
     f3.metric("Marge d'Exploitation Directe", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
     
     st.markdown("---")
-    st.markdown("### 📋 Détail de la Rentabilité par Référence au Menu")
     st.dataframe(df_calc_marge[['Designation', 'Quantite', 'Total_FCFA', 'Cout_Total_Achat', 'Marge_Brute_FCFA', 'Taux_Marge_%']], use_container_width=True, hide_index=True)
-    
-    # Graphique Pareto des Marges Bénéficiaires
-    df_calc_marge = df_calc_marge.sort_values(by='Marge_Brute_FCFA', ascending=False)
-    fig = px.bar(df_calc_marge, x='Designation', y='Marge_Brute_FCFA', title="Classement des plats/boissons les plus rentables (Marge bénéficiaire en FCFA)", labels={'Marge_Brute_FCFA': 'Marge Bénéficiaire (FCFA)'})
-    st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# VUE 5 : CONFIGURATION DE LA CARTE (ADD / EDIT)
+# VUE 5 : CONFIGURATION DE LA CARTE (ADD / EDIT / DELETE)
 # ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration Technique de la Carte & Menu")
     
-    action = st.radio("Sélectionnez l'action de gestion de la carte :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant"])
+    action = st.radio("Sélectionnez l'action de gestion de la carte :", 
+                      ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit Inutilisé"])
     st.markdown("---")
     
     # --- ACTION 1 : AJOUT DE PRODUIT ---
@@ -313,7 +303,6 @@ def vue_configuration_carte():
                 if not new_designation:
                     st.error("Le nom du produit ne peut pas être vide.")
                 else:
-                    # Génération automatique d'un nouveau Code Article unique
                     prochain_id = len(st.session_state.base_menu) + 1
                     new_code = f"MENU{prochain_id:03d}"
                     
@@ -337,7 +326,6 @@ def vue_configuration_carte():
         
         with st.form("form_edit_produit"):
             st.markdown(f"#### Modification de l'article : {produit_a_modifier} ({code_strict})")
-            
             edit_designation = st.text_input("Modifier le nom de l'article :", value=infos_actuelles['Designation'])
             edit_categorie = st.selectbox("Modifier la Famille :", ["Cuisine", "Bar"], index=0 if infos_actuelles['Categorie'] == 'Cuisine' else 1)
             
@@ -345,18 +333,55 @@ def vue_configuration_carte():
             edit_prix_vente = col1.number_input("Nouveau Prix de Vente (FCFA) :", min_value=0, value=int(infos_actuelles['Prix_Vente_FCFA']), step=100)
             edit_stock_min = col2.number_input("Nouveau Stock Minimum d'Alerte :", min_value=1, value=int(infos_actuelles['Stock_Minimum']))
             
-            if st.form_submit_button("Enregistrer les modifications de prix et seuil ⚡"):
+            if st.form_submit_button("Enregistrer les modifications ⚡"):
                 idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_strict].index
-                
                 st.session_state.base_menu.loc[idx, 'Designation'] = edit_designation
                 st.session_state.base_menu.loc[idx, 'Categorie'] = edit_categorie
                 st.session_state.base_menu.loc[idx, 'Prix_Vente_FCFA'] = edit_prix_vente
                 st.session_state.base_menu.loc[idx, 'Stock_Minimum'] = edit_stock_min
-                
                 st.success(f"Mise à jour effectuée pour '{edit_designation}' !")
                 st.rerun()
 
-# 6. Système de Navigation Multi-pages mis à jour
+    # --- ACTION 3 : SUPPRESSION SÉCURISÉE (NOUVELLE OPTION) ---
+    elif action == "❌ Supprimer un Produit Inutilisé":
+        st.markdown("#### Suppression définitive d'une référence")
+        st.warning("⚠️ Règle stricte : Un produit ayant déjà fait l'objet d'une vente active (qu'elle soit payée ou en cours) ne peut pas être supprimé afin de préserver l'historique comptable.")
+        
+        # Liste de tous les codes articles présents dans l'historique des ventes
+        if not st.session_state.historique_ventes.empty:
+            codes_utilises = set(st.session_state.historique_ventes[st.session_state.historique_ventes['Type_Flux'] == 'Sortie']['Code_Article'].unique())
+        else:
+            codes_utilises = set()
+            
+        # Création de la liste des choix avec indicateur de statut
+        options_suppression = {}
+        for _, r in st.session_state.base_menu.iterrows():
+            deja_vendu = r['Code_Article'] in codes_utilises
+            label = f"{r['Designation']} ({r['Categorie']}) — {'🔒 Vendu (Bloqué)' if deja_vendu else '🔓 Jamais vendu (Supprimable)'}"
+            options_suppression[label] = {
+                'code': r['Code_Article'],
+                'bloque': deja_vendu,
+                'nom': r['Designation']
+            }
+            
+        choix_label = st.selectbox("Choisir l'article à supprimer :", list(options_suppression.keys()))
+        info_choix = options_suppression[choix_label]
+        
+        if info_choix['bloque']:
+            st.error(f"❌ Impossible de supprimer '{info_choix['nom']}'. Cet article possède des données de vente rattachées dans l'historique comptable.")
+        else:
+            st.info(f"✅ Validation : '{info_choix['nom']}' n'a jamais été commandé. Vous pouvez le retirer du menu en toute sécurité.")
+            
+            # Formulaire de confirmation finale
+            with st.form("form_suppression_strict"):
+                st.write(f"Confirmez-vous la suppression définitive de : **{info_choix['nom']}** ?")
+                if st.form_submit_button("Confirmer la suppression définitive 🗑️", type="primary"):
+                    # Filtrage du référentiel pour exclure l'article supprimé
+                    st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != info_choix['code']].reset_index(drop=True)
+                    st.success(f"L'article '{info_choix['nom']}' a été retiré de la carte avec succès.")
+                    st.rerun()
+
+# 6. Système de Navigation Multi-pages
 pg = st.navigation([
     st.Page(vue_prise_commande, title="Prise de Commande", icon="📝"),
     st.Page(vue_commandes_additions, title="Commandes & Additions", icon="🧾"),
