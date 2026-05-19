@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import os
+from datetime import datetime
 
 # 1. Configuration de la page
 st.set_page_config(
@@ -12,100 +13,92 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Fonction de chargement ultra-sécurisée
+# 2. Chargement initial sécurisé de la base articles
 @st.cache_data
-def charger_donnees_excel():
+def charger_base_excel():
     nom_fichier = "EASYGEST.xlsm"
-    
     if os.path.exists(nom_fichier):
         try:
-            # Lecture du fichier Excel
             df = pd.read_excel(nom_fichier, sheet_name=0)
-            
-            # Si le fichier est vide ou mal lu
-            if df.empty or len(df.columns) == 0:
-                return generer_donnees_secours(), f"ℹ️ Le fichier '{nom_fichier}' semble vide. Mode démo activé."
-            
-            # Nettoyage des noms de colonnes (retrait des espaces inutiles)
             df.columns = [str(c).strip() for c in df.columns]
             
-            # Mapping flexible pour s'adapter aux noms de vos colonnes Excel
             mapping = {
                 'Code': 'Code_Article', 'Article': 'Designation', 'Produit': 'Designation', 'Désignation': 'Designation',
-                'Qte': 'Quantite_Dispo', 'Stock': 'Quantite_Dispo', 'Quantité': 'Quantite_Dispo', 'Quantite': 'Quantite_Dispo',
+                'Qte': 'Stock_Initial', 'Stock': 'Stock_Initial', 'Quantité': 'Stock_Initial', 'Quantite': 'Stock_Initial',
                 'Prix': 'Prix_Unitaire_FCFA', 'PU': 'Prix_Unitaire_FCFA', 'Prix Unitaire': 'Prix_Unitaire_FCFA',
                 'Stock Minimum': 'Stock_Minimum', 'Minimum': 'Stock_Minimum', 'Site': 'Site', 'Secteur': 'Site'
             }
             df = df.rename(columns=mapping)
             
-            # --- VÉRIFICATION ET SÉCURISATION DES COLONNES INDISPENSABLES ---
-            if 'Code_Article' not in df.columns: 
-                df['Code_Article'] = [f"ART{i+1:03d}" for i in range(len(df))]
-                
-            if 'Designation' not in df.columns:
-                if len(df.columns) > 0:
-                    df = df.rename(columns={df.columns[0]: 'Designation'})
-                else:
-                    df['Designation'] = "Article Sans Nom"
-                    
-            if 'Site' not in df.columns: 
-                df['Site'] = 'Abatta'  # Par défaut si non spécifié
-                
-            if 'Quantite_Dispo' not in df.columns: 
-                df['Quantite_Dispo'] = 0
-                
-            if 'Stock_Minimum' not in df.columns: 
-                df['Stock_Minimum'] = 5
-                
-            if 'Prix_Unitaire_FCFA' not in df.columns: 
-                # Si vous n'avez pas de colonne prix, on met 1000 par défaut pour avoir une valeur de démo
-                df['Prix_Unitaire_FCFA'] = 1000  
+            if 'Code_Article' not in df.columns: df['Code_Article'] = [f"ART{i+1:03d}" for i in range(len(df))]
+            if 'Designation' not in df.columns: df['Designation'] = df.columns[0] if len(df.columns) > 0 else "Article Sans Nom"
+            if 'Site' not in df.columns: df['Site'] = 'Abatta'
+            if 'Stock_Initial' not in df.columns: df['Stock_Initial'] = 0
+            if 'Stock_Minimum' not in df.columns: df['Stock_Minimum'] = 5
+            if 'Prix_Unitaire_FCFA' not in df.columns: df['Prix_Unitaire_FCFA'] = 1000
             
-            # Nettoyage des données numériques (force la conversion et remplace les lignes vides par 0)
-            df['Quantite_Dispo'] = pd.to_numeric(df['Quantite_Dispo'], errors='coerce').fillna(0)
+            df['Stock_Initial'] = pd.to_numeric(df['Stock_Initial'], errors='coerce').fillna(0)
             df['Stock_Minimum'] = pd.to_numeric(df['Stock_Minimum'], errors='coerce').fillna(5)
             df['Prix_Unitaire_FCFA'] = pd.to_numeric(df['Prix_Unitaire_FCFA'], errors='coerce').fillna(0)
             
-            # CRÉATION SÉCURISÉE DE LA COLONNE QUI CAUSAIT L'ERREUR
-            df['Valeur_Stock_FCFA'] = df['Quantite_Dispo'] * df['Prix_Unitaire_FCFA']
-            
-            return df, f"✅ Vos données réelles de {nom_fichier} ont été chargées avec succès !"
-            
-        except Exception as e:
-            return generer_donnees_secours(), f"⚠️ Erreur de traitement Excel : {str(e)}. Mode démo activé."
+            return df[['Code_Article', 'Designation', 'Site', 'Stock_Initial', 'Stock_Minimum', 'Prix_Unitaire_FCFA']]
+        except Exception:
+            return generer_base_secours()
     else:
-        return generer_donnees_secours(), f"ℹ️ Fichier '{nom_fichier}' introuvable. Mode démo activé."
+        return generer_base_secours()
 
-def generer_donnees_secours():
-    stocks_data = {
-        'Code_Article': ['ART001', 'ART002', 'ART003', 'ART004', 'ART005'],
-        'Designation': ['Huile de palme 1L', 'Riz Cassé 50kg', 'Sucre Roux 1kg', 'Lait Concentré', 'Farine de Blé 25kg'],
-        'Site': ['Abatta', 'Jules Vernes', 'San-Pedro', 'Abatta', 'San-Pedro'],
-        'Quantite_Dispo': [150, 45, 210, 8, 95],
-        'Stock_Minimum': [50, 20, 40, 15, 30],
-        'Prix_Unitaire_FCFA': [1200, 31000, 850, 650, 14500]
-    }
-    df = pd.DataFrame(stocks_data)
-    df['Valeur_Stock_FCFA'] = df['Quantite_Dispo'] * df['Prix_Unitaire_FCFA']
-    return df
+def generer_base_secours():
+    return pd.DataFrame({
+        'Code_Article': ['ART001', 'ART002', 'ART003', 'ART004'],
+        'Designation': ['Huile de palme 1L', 'Riz Cassé 50kg', 'Sucre Roux 1kg', 'Lait Concentré'],
+        'Site': ['Abatta', 'Jules Vernes', 'San-Pedro', 'Abatta'],
+        'Stock_Initial': [100, 50, 200, 30],
+        'Stock_Minimum': [20, 10, 30, 15],
+        'Prix_Unitaire_FCFA': [1200, 31000, 850, 650]
+    })
 
-# Initialisation de la session d'état Streamlit
-if 'df_stocks' not in st.session_state:
-    df_init, statut_message = charger_donnees_excel()
-    st.session_state.df_stocks = df_init
-    st.session_state.statut_msg = statut_message
+# --- INITIALISATION DES VARIABLES DE SESSION (MÉMOIRE DE L'APP) ---
+if 'base_articles' not in st.session_state:
+    st.session_state.base_articles = charger_base_excel()
 
-df_global = st.session_state.df_stocks.copy()
+if 'historique_mouvements' not in st.session_state:
+    # Création d'un historique de mouvements vide par défaut
+    st.session_state.historique_mouvements = pd.DataFrame(columns=[
+        'Date', 'Code_Article', 'Type_Mouvement', 'Quantite', 'Motif'
+    ])
 
-# 3. Tri et Analyse ABC / Pareto (Tri des valeurs par ordre décroissant)
+# --- CALCUL DYNAMIQUE DU STOCK DISPONIBLE ---
+def recalculer_stocks_globaux():
+    df_art = st.session_state.base_articles.copy()
+    df_mvt = st.session_state.historique_mouvements.copy()
+    
+    # Calcul du total des entrées par produit
+    df_entrees = df_mvt[df_mvt['Type_Mouvement'] == 'Entrée'].groupby('Code_Article')['Quantite'].sum().reset_index()
+    df_entrees.columns = ['Code_Article', 'Total_Entrees']
+    
+    # Calcul du total des sorties par produit
+    df_sorties = df_mvt[df_mvt['Type_Mouvement'] == 'Sortie'].groupby('Code_Article')['Quantite'].sum().reset_index()
+    df_sorties.columns = ['Code_Article', 'Total_Sorties']
+    
+    # Fusion des calculs avec la base article
+    df_final = df_art.merge(df_entrees, on='Code_Article', how='left').merge(df_sorties, on='Code_Article', how='left')
+    df_final['Total_Entrees'] = df_final['Total_Entrees'].fillna(0)
+    df_final['Total_Sorties'] = df_final['Total_Sorties'].fillna(0)
+    
+    # Calcul de la quantité disponible finale
+    df_final['Quantite_Dispo'] = df_final['Stock_Initial'] + df_final['Total_Entrees'] - df_final['Total_Sorties']
+    df_final['Valeur_Stock_FCFA'] = df_final['Quantite_Dispo'] * df_final['Prix_Unitaire_FCFA']
+    
+    return df_final
+
+df_global = recalculer_stocks_globaux()
+
+# 3. Traitement Analyse ABC / Pareto (Tri des valeurs par ordre décroissant)
 def appliquer_analyse_abc(df_input):
-    if df_input.empty or 'Valeur_Stock_FCFA' not in df_input.columns:
-        return df_input
-    
-    # Tri impératif par valeur financière décroissante dans la colonne
+    if df_input.empty: return df_input
     df_sorted = df_input.sort_values(by='Valeur_Stock_FCFA', ascending=False).reset_index(drop=True)
-    
     total_valeur = df_sorted['Valeur_Stock_FCFA'].sum()
+    
     if total_valeur > 0:
         df_sorted['Valeur_Cumulee'] = df_sorted['Valeur_Stock_FCFA'].cumsum()
         df_sorted['Pourcentage_Cumule'] = (df_sorted['Valeur_Cumulee'] / total_valeur) * 100
@@ -120,75 +113,59 @@ def appliquer_analyse_abc(df_input):
     df_sorted['Classe_ABC'] = df_sorted['Pourcentage_Cumule'].apply(segmenter)
     return df_sorted
 
-# 4. Barre latérale et filtres de navigation
-st.sidebar.title("Easygest v1.0")
-st.sidebar.info(st.session_state.statut_msg)
+# 4. Configuration de la Barre Latérale
+st.sidebar.title("Easygest v1.1")
+liste_sites = ['Tous les sites'] + sorted(list(df_global['Site'].dropna().unique().astype(str)))
+site_selectionne = st.sidebar.selectbox("Filtrer par Site commercial :", liste_sites)
 
-if 'Site' in df_global.columns and not df_global.empty:
-    liste_sites = ['Tous les sites'] + sorted(list(df_global['Site'].dropna().unique().astype(str)))
-else:
-    liste_sites = ['Tous les sites']
-
-site_selectionne = st.sidebar.selectbox("Choisir le site commercial :", liste_sites)
-
-if site_selectionne != 'Tous les sites' and 'Site' in df_global.columns:
+if site_selectionne != 'Tous les sites':
     df_filtre = df_global[df_global['Site'] == site_selectionne].copy()
 else:
     df_filtre = df_global.copy()
 
 df_analyse = appliquer_analyse_abc(df_filtre)
 
-# 5. Définition des Vues (Dashboard et Tableaux)
+# 5. Définition des Vues / Pages
 def vue_dashboard():
-    st.subheader(f"📊 Tableau de Bord Analytique — {site_selectionne}")
+    st.subheader(f"📊 Tableau de Bord Général — {site_selectionne}")
     
     kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("Références Articles", f"{len(df_analyse)} produits")
+    kpi1.metric("Références Produits", f"{len(df_analyse)} articles")
+    kpi2.metric("Valeur Financière Stock", f"{df_analyse['Valeur_Stock_FCFA'].sum():,.0f} FCFA")
     
-    valeur_totale = df_analyse['Valeur_Stock_FCFA'].sum() if 'Valeur_Stock_FCFA' in df_analyse.columns else 0
-    kpi2.metric("Valeur Totale Stock", f"{valeur_totale:,.0f} FCFA")
-    
-    alertes = df_analyse[df_analyse['Quantite_Dispo'] <= df_analyse['Stock_Minimum']].shape[0] if 'Stock_Minimum' in df_analyse.columns else 0
-    kpi3.metric("Articles en sous-stock", f"{alertes} alertes", delta="-Attention" if alertes > 0 else "OK", delta_color="inverse" if alertes > 0 else "normal")
+    alertes = df_analyse[df_analyse['Quantite_Dispo'] <= df_analyse['Stock_Minimum']].shape[0]
+    kpi3.metric("Alertes Réapprovisionnement", f"{alertes} alertes", delta="-Attention" if alertes > 0 else "OK", delta_color="inverse" if alertes > 0 else "normal")
     
     st.markdown("---")
-    st.markdown("### 📈 Classement Pareto par valeur décroissante")
-    
-    if not df_analyse.empty and 'Valeur_Stock_FCFA' in df_analyse.columns and df_analyse['Valeur_Stock_FCFA'].sum() > 0:
-        fig = px.bar(
-            df_analyse, 
-            x='Designation', 
-            y='Valeur_Stock_FCFA', 
-            color='Classe_ABC' if 'Classe_ABC' in df_analyse.columns else None,
-            labels={'Valeur_Stock_FCFA': 'Valeur (FCFA)', 'Designation': 'Article'},
-            color_discrete_map={'Classe A (Critique)': '#EF553B', 'Classe B (Intermédiaire)': '#FECB52', 'Classe C (Secondaire)': '#636EFA'}
-        )
+    st.markdown("### 📈 Analyse Pareto des valeurs de stock (Ordre décroissant)")
+    if not df_analyse.empty and df_analyse['Valeur_Stock_FCFA'].sum() > 0:
+        fig = px.bar(df_analyse, x='Designation', y='Valeur_Stock_FCFA', color='Classe_ABC',
+                     labels={'Valeur_Stock_FCFA': 'Valeur (FCFA)', 'Designation': 'Article'},
+                     color_discrete_map={'Classe A (Critique)': '#EF553B', 'Classe B (Intermédiaire)': '#FECB52', 'Classe C (Secondaire)': '#636EFA'})
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Aucune donnée financière graphique disponible à afficher.")
+        st.info("Aucun graphique à afficher (valeur des stocks à 0).")
 
-def vue_stocks():
-    st.subheader(f"📦 Registre des Stocks — {site_selectionne}")
+def vue_mouvements():
+    st.subheader("🔄 Gestion des Entrées & Sorties de Stock")
     
-    if df_analyse.empty:
-        st.warning("Aucune donnée disponible.")
-    else:
-        def colorer_alertes(row):
-            if 'Stock_Minimum' in row and row['Quantite_Dispo'] <= row['Stock_Minimum']:
-                return ['background-color: #ffcccc'] * len(row)
-            return [''] * len(row)
-        
-        colonnes_affichees = [c for c in ['Code_Article', 'Designation', 'Site', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Unitaire_FCFA', 'Valeur_Stock_FCFA', 'Classe_ABC'] if c in df_analyse.columns]
-        
-        st.dataframe(
-            df_analyse[colonnes_affichees].style.apply(colorer_alertes, axis=1),
-            use_container_width=True,
-            hide_index=True
-        )
-
-# 6. Système de Navigation de l'application
-pg = st.navigation([
-    st.Page(vue_dashboard, title="Tableau de Bord", icon="📊"),
-    st.Page(vue_stocks, title="Gestion des Stocks", icon="📦")
-])
-pg.run()
+    col_form, col_Filtre_site = st.columns([1, 2])
+    
+    with col_form:
+        st.markdown("#### 📝 Enregistrer un flux")
+        with st.form("form_mouvement", clear_on_submit=True):
+            # Sélection de l'article basé sur la liste disponible
+            options_articles = {f"{row['Code_Article']} - {row['Designation']} ({row['Site']})": row['Code_Article'] for _, row in st.session_state.base_articles.iterrows()}
+            article_choisi = st.selectbox("Sélectionner l'article :", options_list:=list(options_articles.keys()))
+            
+            type_mvt = st.radio("Nature du mouvement :", ['Entrée', 'Sortie'])
+            quantite_mvt = st.number_input("Quantité concernée :", min_value=1, value=1)
+            motif_mvt = st.text_input("Motif / Commentaire :", value="Livraison fournisseur" if type_mvt=='Entrée' else "Vente client")
+            
+            soumis = st.form_submit_button("Valider le mouvement 💾")
+            
+            if soumis:
+                code_art_strict = options_articles[article_choisi]
+                
+                # Vérification de sécurité pour éviter les stocks négatifs lors d'une sortie
+                stock_actuel = df_global
