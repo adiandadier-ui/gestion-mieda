@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 import os
 from datetime import datetime
 import streamlit.components.v1 as components
@@ -14,49 +13,95 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Chargement de la Carte initiale (uniquement au tout premier démarrage)
-@st.cache_data
-def charger_carte_restaurant_initiale():
-    return pd.DataFrame({
-        'Code_Article': ['MENU001', 'MENU002', 'MENU003', 'MENU004', 'MENU005', 'MENU006'],
-        'Designation': ['Poulet Braisé Entier', 'Alloco Simple', 'Riz Gras au Gras', 'Bière Ivoirienne 65cl', 'Jus de Bissap Maison', 'Eau Minérale 1.5L'],
-        'Categorie': ['Cuisine', 'Cuisine', 'Cuisine', 'Bar', 'Bar', 'Bar'],
-        'Stock_Initial': [30, 100, 40, 120, 80, 200],
-        'Stock_Minimum': [5, 15, 8, 24, 10, 36],
-        'Prix_Vente_FCFA': [7000, 1500, 2500, 1000, 800, 600],
-        'Prix_Achat_Moyen_FCFA': [3500, 600, 1000, 650, 300, 250]
-    })
+# --- CONFIGURATION DU STOCKAGE LOCAL CSV ---
+CSV_MENU = "easygest_base_menu.csv"
+CSV_VENTES = "easygest_historique_ventes.csv"
+CSV_BONS = "easygest_historique_bons.csv"
 
-# --- ENREGISTREMENT DANS LA SESSION STATE (MÉMOIRE VIVE DE L'APP) ---
+# Fonctions de persistance et initialisation
+def initialiser_fichiers_csv():
+    # Menu initial par défaut si le fichier n'existe pas encore sur le poste
+    if not os.path.exists(CSV_MENU):
+        df_init_menu = pd.DataFrame({
+            'Code_Article': ['MENU001', 'MENU002', 'MENU003', 'MENU004', 'MENU005', 'MENU006'],
+            'Designation': ['Poulet Braisé Entier', 'Alloco Simple', 'Riz Gras au Gras', 'Bière Ivoirienne 65cl', 'Jus de Bissap Maison', 'Eau Minérale 1.5L'],
+            'Categorie': ['Cuisine', 'Cuisine', 'Cuisine', 'Bar', 'Bar', 'Bar'],
+            'Stock_Initial': [30, 100, 40, 120, 80, 200],
+            'Stock_Minimum': [5, 15, 8, 24, 10, 36],
+            'Prix_Vente_FCFA': [7000, 1500, 2500, 1000, 800, 600],
+            'Prix_Achat_Moyen_FCFA': [3500, 600, 1000, 650, 300, 250]
+        })
+        df_init_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
+
+    # Historique des ventes initial
+    if not os.path.exists(CSV_VENTES):
+        df_init_ventes = pd.DataFrame(columns=[
+            'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
+            'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
+        ])
+        df_init_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
+
+    # Historique des bons initial
+    if not os.path.exists(CSV_BONS):
+        df_init_bons = pd.DataFrame(columns=[
+            'Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur'
+        ])
+        df_init_bons.to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+
+# Appel obligatoire pour sécuriser le stockage local
+initialiser_fichiers_csv()
+
+# Chargement instantané depuis les fichiers CSV locaux vers l'état d'exécution
 if 'base_menu' not in st.session_state:
-    st.session_state.base_menu = charger_carte_restaurant_initiale()
+    st.session_state.base_menu = pd.read_csv(CSV_MENU)
 
 if 'historique_ventes' not in st.session_state:
-    st.session_state.historique_ventes = pd.DataFrame(columns=[
-        'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
-        'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
-    ])
+    st.session_state.historique_ventes = pd.read_csv(CSV_VENTES)
 
 if 'historique_bons' not in st.session_state:
+    df_b = pd.read_csv(CSV_BONS)
     st.session_state.historique_bons = {}
+    for _, r in df_b.iterrows():
+        st.session_state.historique_bons[r['Ref_Bon']] = {
+            'Date': r['Date'], 'Type': r['Type'], 'Article': r['Article'],
+            'Quantite': r['Quantite'], 'Prix_Unitaire': r['Prix_Unitaire'], 
+            'Total': r['Total'], 'Fournisseur': r['Fournisseur']
+        }
 
-# --- RECALCUL ET CONSOLIDATION DYNAMIQUE ---
+# Procédures d'écriture immédiate sur le disque dur local
+def sauvegarder_menu():
+    st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
+
+def sauvegarder_ventes():
+    st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
+
+def sauvegarder_bons():
+    liste_bons = []
+    for ref, b in st.session_state.historique_bons.items():
+        liste_bons.append({
+            'Ref_Bon': ref, 'Date': b['Date'], 'Type': b['Type'], 'Article': b['Article'],
+            'Quantite': b['Quantite'], 'Prix_Unitaire': b['Prix_Unitaire'], 
+            'Total': b['Total'], 'Fournisseur': b['Fournisseur']
+        })
+    df_b = pd.DataFrame(liste_bons) if liste_bons else pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur'])
+    df_b.to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+
+# --- RECALCUL ET CONSOLIDATION DYNAMIQUE DES RELEVES ---
 def consolider_stocks_et_marges():
     df_art = st.session_state.base_menu.copy()
     df_vnt = st.session_state.historique_ventes.copy()
     
-    # Sorties (Ventes validées)
-    df_sorties = df_vnt[(df_vnt['Type_Flux'] == 'Sortie') & (df_vnt['Statut'] != 'Annulé')].groupby('Code_Article')['Quantite'].sum().reset_index(name='Total_Sorties')
+    if not df_vnt.empty:
+        df_sorties = df_vnt[(df_vnt['Type_Flux'] == 'Sortie') & (df_vnt['Statut'] != 'Annulé')].groupby('Code_Article')['Quantite'].sum().reset_index(name='Total_Sorties')
+        df_entrees = df_vnt[df_vnt['Type_Flux'] == 'Réappro'].groupby('Code_Article')['Quantite'].sum().reset_index(name='Total_Entrees')
+    else:
+        df_sorties = pd.DataFrame(columns=['Code_Article', 'Total_Sorties'])
+        df_entrees = pd.DataFrame(columns=['Code_Article', 'Total_Entrees'])
     
-    # Entrées (Réapprovisionnements)
-    df_entrees = df_vnt[df_vnt['Type_Flux'] == 'Réappro'].groupby('Code_Article')['Quantite'].sum().reset_index(name='Total_Entrees')
-    
-    # Fusion
     df_res = df_art.merge(df_sorties, on='Code_Article', how='left').merge(df_entrees, on='Code_Article', how='left')
     df_res['Total_Sorties'] = df_res['Total_Sorties'].fillna(0)
     df_res['Total_Entrees'] = df_res['Total_Entrees'].fillna(0)
     
-    # Quantité disponible actuelle
     df_res['Quantite_Dispo'] = df_res['Stock_Initial'] + df_res['Total_Entrees'] - df_res['Total_Sorties']
     df_res['Valeur_Stock_Vente_FCFA'] = df_res['Quantite_Dispo'] * df_res['Prix_Vente_FCFA']
     
@@ -65,7 +110,7 @@ def consolider_stocks_et_marges():
 df_global = consolider_stocks_et_marges()
 
 # ==========================================
-# VUE 1 : PRISE DE COMMANDE SANS LE PORTIONNAGE
+# VUE 1 : PRISE DE COMMANDE SANS PORTIONNAGE
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
@@ -82,13 +127,10 @@ def vue_prise_commande():
         with st.form("form_commande_strict", clear_on_submit=True):
             liste_tables = [f"Table {i}" for i in range(1, 26)]
             table_choisie = st.selectbox("Sélectionner la Table :", liste_tables)
-            
             item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
             
-            # Détection de la catégorie
             categorie_active = dict_categories[item_choisi] if item_choisi else "Cuisine"
             
-            # --- ACCOMPAGNEMENT GRATUIT UNIQUEMENT (SANS PORTION) ---
             accomp_choisi = "-"
             if categorie_active == "Cuisine":
                 st.markdown("👇 *Options Spécifiques Cuisine*")
@@ -132,15 +174,14 @@ def vue_prise_commande():
                         'Statut': 'En cours', 'Ref_Bon': '-'
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
-                    st.success(f"Commande envoyée en cuisine pour la {table_choisie} !")
+                    
+                    # Sauvegarde automatique instantanée dans le fichier local
+                    sauvegarder_ventes()
+                    st.success(f"Commande envoyée pour la {table_choisie} ! (Écriture locale CSV réussie)")
                     st.rerun()
                     
     with col2:
-        st.info(f"""
-        💡 **Prise de commande simplifiée :**
-        - Le volet de portionnement a été retiré pour accélérer la saisie.
-        - Le choix de l'accompagnement gratuit reste disponible pour guider la préparation en cuisine.
-        """)
+        st.info(f"💾 **Indicateur de Stockage Réseau Local :**\n- Ventes synchronisées : `{CSV_VENTES}`\n- Base de la Carte : `{CSV_MENU}`\n- Les fichiers sont encodés en UTF-8-SIG et modifiables directement sous Excel si besoin.")
 
 # ==========================================
 # VUE 2 : COMMANDES ET ADDITIONS (ÉCRAN CAISSE)
@@ -149,13 +190,13 @@ def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
     
     if st.session_state.historique_ventes.empty:
-        st.info("Aucune commande en cours dans la salle.")
+        st.info("Aucune commande dans l'historique local.")
         return
 
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
     
-    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal des Flux & Remises"])
+    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal des Flux & Remises Persistant"])
     
     with tabs_caisse[0]:
         if df_actives.empty:
@@ -165,7 +206,6 @@ def vue_commandes_additions():
             table_selectionnee = st.selectbox("Sélectionner la table à encaisser :", tables_occupees)
             df_table_strict = df_actives[df_actives['Table'] == table_selectionnee].copy()
             
-            # Affichage combiné : Nom du plat + Accompagnement
             def formater_libelle(row):
                 if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans accompagnement":
                     return f"{row['Designation']} (Acc: {row['Accompagnement']})"
@@ -181,13 +221,17 @@ def vue_commandes_additions():
             if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
-                st.success(f"La {table_selectionnee} a été réglée.")
+                
+                sauvegarder_ventes()
+                st.success(f"La {table_selectionnee} a été réglée et archivée localement.")
                 st.rerun()
                 
             if col_btn2.button(f"Annuler la commande de la {table_selectionnee} ❌"):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
-                st.warning(f"Commandes annulées.")
+                
+                sauvegarder_ventes()
+                st.warning(f"Commandes annulées et mises à jour dans le CSV.")
                 st.rerun()
 
     with tabs_caisse[1]:
@@ -231,7 +275,11 @@ def vue_stocks_appro():
                         'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'CUISINE', 'Article': art_choisi,
                         'Quantite': qte_recue, 'Prix_Unitaire': px_achat_unit, 'Total': qte_recue * px_achat_unit, 'Fournisseur': fournisseur
                     }
-                    st.success(f"Bon {ref_bon} créé avec succès !")
+                    sauvegarder_ventes()
+                    sauvegarder_menu()
+                    sauvegarder_bons()
+                    
+                    st.success(f"Bon {ref_bon} créé et enregistré en local CSV !")
                     st.rerun()
 
     with tab_bar:
@@ -265,7 +313,11 @@ def vue_stocks_appro():
                         'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'BAR', 'Article': art_choisi_bar,
                         'Quantite': qte_recue_bar, 'Prix_Unitaire': px_achat_unit_bar, 'Total': qte_recue_bar * px_achat_unit_bar, 'Fournisseur': fournisseur_bar
                     }
-                    st.success(f"Bon {ref_bon} créé avec succès !")
+                    sauvegarder_ventes()
+                    sauvegarder_menu()
+                    sauvegarder_bons()
+                    
+                    st.success(f"Bon {ref_bon} enregistré localement.")
                     st.rerun()
 
     with tab_bons:
@@ -391,7 +443,9 @@ def vue_configuration_carte():
                         'Prix_Vente_FCFA': new_prix_vente, 'Prix_Achat_Moyen_FCFA': new_prix_achat
                     }])
                     st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvel_article], ignore_index=True)
-                    st.success(f"Article '{new_designation}' ajouté avec succès under {new_code} !")
+                    
+                    sauvegarder_menu()
+                    st.success(f"Article '{new_designation}' ajouté et enregistré en local !")
                     st.rerun()
 
     elif action == "✏️ Modifier un Produit Existant":
@@ -413,7 +467,9 @@ def vue_configuration_carte():
                 st.session_state.base_menu.loc[idx, 'Categorie'] = edit_categorie
                 st.session_state.base_menu.loc[idx, 'Prix_Vente_FCFA'] = edit_prix_vente
                 st.session_state.base_menu.loc[idx, 'Stock_Minimum'] = edit_stock_min
-                st.success(f"Mise à jour effectuée !")
+                
+                sauvegarder_menu()
+                st.success(f"Mise à jour effectuée et enregistrée dans le CSV !")
                 st.rerun()
 
     elif action == "❌ Supprimer un Produit Inutilisé":
@@ -437,7 +493,9 @@ def vue_configuration_carte():
             with st.form("form_suppression_strict"):
                 if st.form_submit_button("Confirmer la suppression définitive 🗑️", type="primary"):
                     st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != info_choix['code']].reset_index(drop=True)
-                    st.success(f"Article supprimé.")
+                    
+                    sauvegarder_menu()
+                    st.success(f"Article supprimé et retiré du CSV local.")
                     st.rerun()
 
 # 6. Système de Navigation Multi-pages
