@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- INJECTION ET CONFIGURATION DU DOSSIER LOCAL C: ---
+# --- CONFIGURATION DU DOSSIER LOCAL C: ---
 def initialiser_dossier_easygest():
     """
     Vérifie l'existence du dossier 'EASYGEST APPS' sur le disque C:
@@ -32,7 +32,7 @@ def initialiser_dossier_easygest():
                 os.makedirs(chemin_cible)
             print(f" [->] Solution de repli activée : Stockage dans -> {chemin_cible}")
             
-    # CRÉATION AUTOMATIQUE DU DOSSIER DE SAUVEGARDE (BACKUPS)
+    # Création du dossier de sauvegarde (backups)
     dossier_backup = os.path.join(chemin_cible, "backups")
     if not os.path.exists(dossier_backup):
         os.makedirs(dossier_backup)
@@ -43,23 +43,23 @@ def initialiser_dossier_easygest():
 DOSSIER_EXPLOITATION = initialiser_dossier_easygest()
 DOSSIER_BACKUPS = os.path.join(DOSSIER_EXPLOITATION, "backups")
 
-# Liaison dynamique des fichiers de données vers le dossier local C:\EASYGEST APPS
+# Liaison des fichiers de données vers le dossier local
 CSV_MENU = os.path.join(DOSSIER_EXPLOITATION, "easygest_base_menu.csv")
 CSV_VENTES = os.path.join(DOSSIER_EXPLOITATION, "easygest_historique_ventes.csv")
 CSV_BONS = os.path.join(DOSSIER_EXPLOITATION, "easygest_historique_bons.csv")
 
-
-# Fonctions de persistance et initialisation
+# Fonctions de persistance et initialisation propre (Sans données démo)
 def initialiser_fichiers_csv():
     if not os.path.exists(CSV_MENU):
+        # Structure propre et vide (avec un seul produit d'exemple pour initialiser la structure)
         df_init_menu = pd.DataFrame({
-            'Code_Article': ['MENU001', 'MENU002', 'MENU003', 'MENU004', 'MENU005', 'MENU006'],
-            'Designation': ['Poulet Braisé Entier', 'Alloco Simple', 'Riz Gras au Gras', 'Bière Ivoirienne 65cl', 'Jus de Bissap Maison', 'Eau Minérale 1.5L'],
-            'Categorie': ['Cuisine', 'Cuisine', 'Cuisine', 'Bar', 'Bar', 'Bar'],
-            'Stock_Initial': [30, 100, 40, 120, 80, 200],
-            'Stock_Minimum': [5, 15, 8, 24, 10, 36],
-            'Prix_Vente_FCFA': [7000, 1500, 2500, 1000, 800, 600],
-            'Prix_Achat_Moyen_FCFA': [3500, 600, 1000, 650, 300, 250]
+            'Code_Article': ['MENU001'],
+            'Designation': ['Exemple (À supprimer après avoir créé vos produits)'],
+            'Categorie': ['Cuisine'],
+            'Stock_Initial': [0],
+            'Stock_Minimum': [5],
+            'Prix_Vente_FCFA': [0],
+            'Prix_Achat_Moyen_FCFA': [0]
         })
         df_init_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
 
@@ -78,6 +78,7 @@ def initialiser_fichiers_csv():
 
 initialiser_fichiers_csv()
 
+# Chargement dans le Session State
 if 'base_menu' not in st.session_state:
     st.session_state.base_menu = pd.read_csv(CSV_MENU)
 
@@ -94,19 +95,15 @@ if 'historique_bons' not in st.session_state:
             'Total': r['Total'], 'Fournisseur': r['Fournisseur']
         }
 
-# --- FONCTIONS DE SAUVEGARDE ET SÉCURISATION DES BACKUPS ---
+# --- FUNCTIONS DE SAUVEGARDE ET DE BACKUP ---
 def sauvegarder_menu():
-    # 1. Mise à jour du fichier d'exploitation principal
     st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
-    # 2. Génération de la sauvegarde de sécurité datée
     horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
     chemin_backup = os.path.join(DOSSIER_BACKUPS, f"backup_menu_{horodatage}.csv")
     st.session_state.base_menu.to_csv(chemin_backup, index=False, encoding='utf-8-sig')
 
 def sauvegarder_ventes():
-    # 1. Mise à jour du fichier d'exploitation principal
     st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
-    # 2. Génération de la sauvegarde de sécurité datée
     horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
     chemin_backup = os.path.join(DOSSIER_BACKUPS, f"backup_ventes_{horodatage}.csv")
     st.session_state.historique_ventes.to_csv(chemin_backup, index=False, encoding='utf-8-sig')
@@ -120,10 +117,8 @@ def sauvegarder_bons():
             'Total': b['Total'], 'Fournisseur': b['Fournisseur']
         })
     df_b = pd.DataFrame(liste_bons) if liste_bons else pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur'])
-    
-    # 1. Mise à jour du fichier d'exploitation principal
     df_b.to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
-    # 2. Génération de la sauvegarde de sécurité datée
+    
     horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
     chemin_backup = os.path.join(DOSSIER_BACKUPS, f"backup_bons_{horodatage}.csv")
     df_b.to_csv(chemin_backup, index=False, encoding='utf-8-sig')
@@ -155,6 +150,11 @@ df_global = consolider_stocks_et_marges()
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
+    
+    if len(st.session_state.base_menu) == 0 or (len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']):
+        st.warning("⚠️ La carte est actuellement vide. Veuillez d'abord ajouter vos vrais produits dans l'onglet 'Configuration Carte' avant de prendre des commandes.")
+        return
+
     col1, col2 = st.columns([1, 1])
     
     with col1:
@@ -166,7 +166,7 @@ def vue_prise_commande():
             dict_categories[label] = r['Categorie']
 
         with st.form("form_commande_strict", clear_on_submit=True):
-            liste_tables = [f"Table {i}" for i in range(1, 26)]
+            liste_tables = [f"Table {i}" for i in range(1, 31)] # Étendu à 30 tables
             table_choisie = st.selectbox("Sélectionner la Table :", liste_tables, key="cmd_table")
             item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()), key="cmd_article")
             
@@ -182,7 +182,7 @@ def vue_prise_commande():
                 )
                 st.markdown("---")
             
-            quantite = st.number_input("Quantité de plats principaux :", min_value=1, value=1, key="cmd_qte")
+            quantite = st.number_input("Quantité :", min_value=1, value=1, key="cmd_qte")
             
             st.markdown("##### 🎁 Option de Remise (Optionnel)")
             opt_remise = st.selectbox("Taux de remise à appliquer :", [0, 5, 10, 15, 20, "Autre (Saisie manuelle)"], key="cmd_opt_remise")
@@ -218,16 +218,11 @@ def vue_prise_commande():
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
                     
                     sauvegarder_ventes()
-                    st.success(f"Commande envoyée pour la {table_choisie} ! (Écriture locale & Backup réussis)")
-                    
-                    for k in ["cmd_qte", "cmd_taux_manuel", "cmd_motif", "cmd_accomp"]:
-                        if k in st.session_state:
-                            del st.session_state[k]
-                            
+                    st.success(f"Commande envoyée pour la {table_choisie} ! Enregistrement OK.")
                     st.rerun()
                     
     with col2:
-        st.info(f"💾 **Indicateur de Stockage Réseau Local :**\n- Répertoire racine : `{DOSSIER_EXPLOITATION}`\n- Dossier Backups sécurisés : `{DOSSIER_BACKUPS}`\n- Ventes synchronisées : `{CSV_VENTES}`\n- Base de la Carte : `{CSV_MENU}`")
+        st.info(f"💾 **Répertoire de Production Actif :**\n- Emplacement de la base de données locale : `{DOSSIER_EXPLOITATION}`\n- Sécurité : Vos données sont clonées dans le dossier `backups` à chaque transaction.")
 
 # ==========================================
 # VUE 2 : COMMANDES ET ADDITIONS (ÉCRAN CAISSE)
@@ -236,17 +231,17 @@ def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
     
     if st.session_state.historique_ventes.empty:
-        st.info("Aucune commande dans l'historique local.")
+        st.info("Aucune commande en cours dans le système.")
         return
 
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
     
-    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal des Flux & Remises Persistant"])
+    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général des Opérations"])
     
     with tabs_caisse[0]:
         if df_actives.empty:
-            st.success("Toutes les tables sont libérées et encaissées. 🎉")
+            st.success("Toutes les tables sont actuellement libres et clôturées. ✨")
         else:
             tables_occupees = sorted(df_actives['Table'].unique())
             table_selectionnee = st.selectbox("Sélectionner la table à encaisser :", tables_occupees)
@@ -254,7 +249,7 @@ def vue_commandes_additions():
             
             def formater_libelle(row):
                 if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans accompagnement":
-                    return f"{row['Designation']} (Acc: {row['Accompagnement']})"
+                    return f"{row['Designation']} (+ {row['Accompagnement']})"
                 return row['Designation']
                 
             df_table_strict['Désignation Produit'] = df_table_strict.apply(formater_libelle, axis=1)
@@ -265,20 +260,19 @@ def vue_commandes_additions():
             
             col_btn1, col_btn2 = st.columns(2)
             if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours').index]
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
                 
                 sauvegarder_ventes()
-                st.success(f"La {table_selectionnee} a été réglée et archivée localement.")
+                st.success(f"La {table_selectionnee} a été validée avec succès !")
                 st.rerun()
                 
-            if col_btn2.button(f"Annuler la commande de la {table_selectionnee} ❌"):
+            if col_btn2.button(f"Annuler l'addition de la {table_selectionnee} ❌"):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
                 
                 sauvegarder_ventes()
-                st.warning(f"Commandes annulées et mises à jour dans le CSV.")
+                st.warning(f"Commandes annulées.")
                 st.rerun()
 
     with tabs_caisse[1]:
@@ -296,80 +290,86 @@ def vue_stocks_appro():
         st.dataframe(df_cuisine[['Code_Article', 'Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Vente_FCFA']], use_container_width=True, hide_index=True)
         
         with st.expander("📥 Enregistrer un Achat / Approvisionnement Cuisine"):
-            with st.form("form_appro_cuisine", clear_on_submit=True):
-                dict_cuisine = {r['Designation']: r['Code_Article'] for _, r in df_cuisine.iterrows()}
-                art_choisi = st.selectbox("Article Cuisine reçu :", list(dict_cuisine.keys()))
-                qte_recue = st.number_input("Quantité achetée :", min_value=1, value=10)
-                px_achat_unit = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=1000, step=50)
-                fournisseur = st.text_input("Nom du Fournisseur :", value="Grossiste Marché")
-                
-                if st.form_submit_button("Générer le Bon d'Entrée Cuisine 📑"):
-                    code_r = dict_cuisine[art_choisi]
-                    ref_bon = f"BON-CUI-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            if df_cuisine.empty:
+                st.info("Aucun article Cuisine configuré à la carte.")
+            else:
+                with st.form("form_appro_cuisine", clear_on_submit=True):
+                    dict_cuisine = {r['Designation']: r['Code_Article'] for _, r in df_cuisine.iterrows()}
+                    art_choisi = st.selectbox("Article Cuisine reçu :", list(dict_cuisine.keys()))
+                    qte_recue = st.number_input("Quantité achetée :", min_value=1, value=10)
+                    px_achat_unit = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=1000, step=50)
+                    fournisseur = st.text_input("Nom du Fournisseur :", value="Grossiste Marché")
                     
-                    ligne_appro = pd.DataFrame([{
-                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 'Code_Article': code_r,
-                        'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
-                        'Remise_Pourcent': 0, 'Accompagnement': '-', 
-                        'Total_FCFA': qte_recue * px_achat_unit, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
-                    }])
-                    st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
-                    
-                    idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
-                    st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit
-                    
-                    st.session_state.historique_bons[ref_bon] = {
-                        'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'CUISINE', 'Article': art_choisi,
-                        'Quantite': qte_recue, 'Prix_Unitaire': px_achat_unit, 'Total': qte_recue * px_achat_unit, 'Fournisseur': fournisseur
-                    }
-                    sauvegarder_ventes()
-                    sauvegarder_menu()
-                    sauvegarder_bons()
-                    
-                    st.success(f"Bon {ref_bon} créé et enregistré avec sauvegarde !")
-                    st.rerun()
+                    if st.form_submit_button("Générer le Bon d'Entrée Cuisine 📑"):
+                        code_r = dict_cuisine[art_choisi]
+                        ref_bon = f"BON-CUI-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                        
+                        ligne_appro = pd.DataFrame([{
+                            'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 'Code_Article': code_r,
+                            'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
+                            'Remise_Pourcent': 0, 'Accompagnement': '-', 
+                            'Total_FCFA': qte_recue * px_achat_unit, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
+                        }])
+                        st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
+                        
+                        idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
+                        st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit
+                        
+                        st.session_state.historique_bons[ref_bon] = {
+                            'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'CUISINE', 'Article': art_choisi,
+                            'Quantite': qte_recue, 'Prix_Unitaire': px_achat_unit, 'Total': qte_recue * px_achat_unit, 'Fournisseur': fournisseur
+                        }
+                        sauvegarder_ventes()
+                        sauvegarder_menu()
+                        sauvegarder_bons()
+                        
+                        st.success(f"Bon {ref_bon} créé avec succès et stock mis à jour !")
+                        st.rerun()
 
     with tab_bar:
         df_bar = df_global[df_global['Categorie'] == 'Bar']
         st.dataframe(df_bar[['Code_Article', 'Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Vente_FCFA']], use_container_width=True, hide_index=True)
         
         with st.expander("📥 Enregistrer un Achat / Approvisionnement Bar"):
-            with st.form("form_appro_bar", clear_on_submit=True):
-                dict_bar = {r['Designation']: r['Code_Article'] for _, r in df_bar.iterrows()}
-                art_choisi_bar = st.selectbox("Boisson reçue :", list(dict_bar.keys()))
-                qte_recue_bar = st.number_input("Quantité achetée :", min_value=1, value=24)
-                px_achat_unit_bar = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=500, step=50)
-                fournisseur_bar = st.text_input("Nom du Fournisseur :", value="SOLIBRA")
-                
-                if st.form_submit_button("Générer le Bon d'Entrée Bar 📑"):
-                    code_r = dict_bar[art_choisi_bar]
-                    ref_bon = f"BON-BAR-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            if df_bar.empty:
+                st.info("Aucun article Bar configuré à la carte.")
+            else:
+                with st.form("form_appro_bar", clear_on_submit=True):
+                    dict_bar = {r['Designation']: r['Code_Article'] for _, r in df_bar.iterrows()}
+                    art_choisi_bar = st.selectbox("Boisson reçue :", list(dict_bar.keys()))
+                    qte_recue_bar = st.number_input("Quantité achetée :", min_value=1, value=24)
+                    px_achat_unit_bar = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=500, step=50)
+                    fournisseur_bar = st.text_input("Nom du Fournisseur :", value="SOLIBRA")
                     
-                    ligne_appro = pd.DataFrame([{
-                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_BAR', 'Code_Article': code_r,
-                        'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
-                        'Remise_Pourcent': 0, 'Accompagnement': '-', 
-                        'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
-                    }])
-                    st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
-                    
-                    idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
-                    st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit_bar
-                    
-                    st.session_state.historique_bons[ref_bon] = {
-                        'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'BAR', 'Article': art_choisi_bar,
-                        'Quantite': qte_recue_bar, 'Prix_Unitaire': px_achat_unit_bar, 'Total': qte_recue_bar * px_achat_unit_bar, 'Fournisseur': fournisseur_bar
-                    }
-                    sauvegarder_ventes()
-                    sauvegarder_menu()
-                    sauvegarder_bons()
-                    
-                    st.success(f"Bon {ref_bon} enregistré avec sauvegarde !")
-                    st.rerun()
+                    if st.form_submit_button("Générer le Bon d'Entrée Bar 📑"):
+                        code_r = dict_bar[art_choisi_bar]
+                        ref_bon = f"BON-BAR-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                        
+                        ligne_appro = pd.DataFrame([{
+                            'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_BAR', 'Code_Article': code_r,
+                            'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
+                            'Remise_Pourcent': 0, 'Accompagnement': '-', 
+                            'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
+                        }])
+                        st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
+                        
+                        idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
+                        st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit_bar
+                        
+                        st.session_state.historique_bons[ref_bon] = {
+                            'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'BAR', 'Article': art_choisi_bar,
+                            'Quantite': qte_recue_bar, 'Prix_Unitaire': px_achat_unit_bar, 'Total': qte_recue_bar * px_achat_unit_bar, 'Fournisseur': fournisseur_bar
+                        }
+                        sauvegarder_ventes()
+                        sauvegarder_menu()
+                        sauvegarder_bons()
+                        
+                        st.success(f"Bon {ref_bon} enregistré avec succès !")
+                        st.rerun()
 
     with tab_bons:
         if not st.session_state.historique_bons:
-            st.info("Aucun bon d'entrée valorisé généré.")
+            st.info("Aucun bon d'entrée disponible pour le moment.")
         else:
             bon_selectionne = st.selectbox("Choisir un Bon pour contrôle physique :", list(st.session_state.historique_bons.keys())[::-1])
             b = st.session_state.historique_bons[bon_selectionne]
@@ -426,17 +426,17 @@ def vue_stocks_appro():
                 </script>
                 """
                 components.html(js_script, height=0, width=0)
-                st.success("Ordre d'impression envoyé !")
+                st.success("Fenêtre d'impression ouverte !")
 
 # ==========================================
 # VUE 4 : FINANCES AVEC IMPACT DES REMISES
 # ==========================================
 def vue_finances_marges():
-    st.subheader("📊 Compte d'Exploitation & Marges Réelles")
+    st.subheader("📊 Compte d'Exploitation & Rentabilité Réelle")
     df_ventes_payees = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
     
     if df_ventes_payees.empty:
-        st.info("Aucun encaissement validé pour le moment.")
+        st.info("Les indicateurs financiers s'activeront dès les premiers encaissements réels.")
         return
         
     df_calc_marge = df_ventes_payees.groupby('Code_Article').agg({'Quantite': 'sum', 'Total_FCFA': 'sum'}).reset_index()
@@ -444,7 +444,6 @@ def vue_finances_marges():
     
     df_calc_marge['Cout_Total_Achat'] = df_calc_marge['Quantite'] * df_calc_marge['Prix_Achat_Moyen_FCFA']
     df_calc_marge['Marge_Brute_FCFA'] = df_calc_marge['Total_FCFA'] - df_calc_marge['Cout_Total_Achat']
-    df_calc_marge['Taux_Marge_%'] = (df_calc_marge['Marge_Brute_FCFA'] / df_calc_marge['Total_FCFA']) * 100
     
     ca_total = df_calc_marge['Total_FCFA'].sum()
     cout_achats_total = df_calc_marge['Cout_Total_Achat'].sum()
@@ -452,36 +451,40 @@ def vue_finances_marges():
     taux_marge_global = (marge_globale / ca_total) * 100 if ca_total > 0 else 0
     
     f1, f2, f3 = st.columns(3)
-    f1.metric("Chiffre d'Affaires Net encaissé", f"{ca_total:,.0f} FCFA")
-    f2.metric("Coût des Matières (Achats)", f"{cout_achats_total:,.0f} FCFA", delta="-Dépenses", delta_color="inverse")
-    f3.metric("Marge Réelle d'Exploitation", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
+    f1.metric("Chiffre d'Affaires Net Encaissé", f"{ca_total:,.0f} FCFA")
+    f2.metric("Coût des Matières (Achats)", f"{cout_achats_total:,.0f} FCFA", delta="-Coûts", delta_color="inverse")
+    f3.metric("Marge Réelle nette", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
     
     st.markdown("---")
-    st.markdown("### 📋 Analyse détaillée des ventes et options d'accompagnements")
+    st.markdown("### 📋 Analyse des Ventes par Table")
     st.dataframe(df_ventes_payees.merge(st.session_state.base_menu[['Code_Article', 'Designation']], on='Code_Article')[['Heure', 'Table', 'Designation', 'Quantite', 'Accompagnement', 'Remise_Pourcent', 'Motif_Remise', 'Total_FCFA']], use_container_width=True, hide_index=True)
 
 # ==========================================
-# VUE 5 : CONFIGURATION DE LA CARTE
+# VUE 5 : CONFIGURATION DE LA CARTE (PAR LE CLIENT)
 # ==========================================
 def vue_configuration_carte():
-    st.subheader("⚙️ Configuration Technique de la Carte & Menu")
-    action = st.radio("Sélectionnez l'action de gestion de la carte :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit Inutilisé"])
+    st.subheader("⚙️ Configuration de la Carte (Ajout / Modification / Suppression)")
+    action = st.radio("Sélectionnez l'action de gestion de votre carte :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit de la Carte"])
     st.markdown("---")
     
     if action == "➕ Ajouter un Nouveau Produit":
         with st.form("form_ajout_produit", clear_on_submit=True):
-            new_designation = st.text_input("Désignation / Nom du plat ou de la boisson :")
+            new_designation = st.text_input("Désignation du produit (ex: Kedjenou de Poulet, Soupe de Poisson, Heineken...) :")
             new_categorie = st.selectbox("Famille d'article :", ["Cuisine", "Bar"])
             c1, c2, c3 = st.columns(3)
-            new_stock_init = c1.number_input("Stock Initial de départ :", min_value=0, value=10)
-            new_stock_min = c2.number_input("Seuil d'Alerte Stock Minimum :", min_value=1, value=5)
-            new_prix_vente = c3.number_input("Prix de Vente Client (FCFA) :", min_value=0, value=1500, step=100)
-            new_prix_achat = st.number_input("Prix d'Achat Estimé initial (FCFA) :", min_value=0, value=700, step=50)
+            new_stock_init = c1.number_input("Stock Initial disponible (Saisie unique de départ) :", min_value=0, value=0)
+            new_stock_min = c2.number_input("Seuil d'Alerte Stock Minimum (Alerte Rouge) :", min_value=1, value=5)
+            new_prix_vente = c3.number_input("Prix de Vente Client (FCFA) :", min_value=0, value=1000, step=100)
+            new_prix_achat = st.number_input("Prix d'Achat Estimé / unitaire (FCFA) :", min_value=0, value=500, step=50)
             
-            if st.form_submit_button("Enregistrer le nouveau produit à la carte 💾"):
+            if st.form_submit_button("💾 Enregistrer ce Produit à la Carte"):
                 if not new_designation:
-                    st.error("Le nom du produit ne peut pas être vide.")
+                    st.error("Le nom du produit est obligatoire.")
                 else:
+                    # Si l'exemple initial existe encore et qu'on ajoute un vrai produit, on nettoie proprement l'exemple
+                    if len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']:
+                        st.session_state.base_menu = pd.DataFrame(columns=st.session_state.base_menu.columns)
+                    
                     prochain_id = len(st.session_state.base_menu) + 1
                     new_code = f"MENU{prochain_id:03d}"
                     nouvel_article = pd.DataFrame([{
@@ -492,10 +495,14 @@ def vue_configuration_carte():
                     st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvel_article], ignore_index=True)
                     
                     sauvegarder_menu()
-                    st.success(f"Article '{new_designation}' ajouté et enregistré avec sauvegarde !")
+                    st.success(f"Félicitations ! L'article '{new_designation}' est maintenant disponible sur la carte.")
                     st.rerun()
 
     elif action == "✏️ Modifier un Produit Existant":
+        if st.session_state.base_menu.empty or (len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']):
+            st.info("Aucun produit disponible à modifier.")
+            return
+
         dict_edit = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
         produit_a_modifier = st.selectbox("Sélectionner le produit à réajuster :", list(dict_edit.keys()))
         code_strict = dict_edit[produit_a_modifier]
@@ -506,9 +513,9 @@ def vue_configuration_carte():
             edit_categorie = st.selectbox("Modifier la Famille :", ["Cuisine", "Bar"], index=0 if infos_actuelles['Categorie'] == 'Cuisine' else 1)
             col1, col2 = st.columns(2)
             edit_prix_vente = col1.number_input("Nouveau Prix de Vente (FCFA) :", min_value=0, value=int(infos_actuelles['Prix_Vente_FCFA']), step=100)
-            edit_stock_min = col2.number_input("Nouveau Stock Minimum d'Alerte :", min_value=1, value=int(infos_actuelles['Stock_Minimum']))
+            edit_stock_min = col2.number_input("Nouveau Stock Minimum :", min_value=1, value=int(infos_actuelles['Stock_Minimum']))
             
-            if st.form_submit_button("Enregistrer les modifications ⚡"):
+            if st.form_submit_button("⚡ Sauvegarder les Changements"):
                 idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_strict].index
                 st.session_state.base_menu.loc[idx, 'Designation'] = edit_designation
                 st.session_state.base_menu.loc[idx, 'Categorie'] = edit_categorie
@@ -516,10 +523,14 @@ def vue_configuration_carte():
                 st.session_state.base_menu.loc[idx, 'Stock_Minimum'] = edit_stock_min
                 
                 sauvegarder_menu()
-                st.success(f"Mise à jour effectuée et enregistrée !")
+                st.success(f"Modifications enregistrées localement.")
                 st.rerun()
 
-    elif action == "❌ Supprimer un Produit Inutilisé":
+    elif action == "❌ Supprimer un Produit de la Carte":
+        if st.session_state.base_menu.empty:
+            st.info("La carte est déjà vide.")
+            return
+
         if not st.session_state.historique_ventes.empty:
             codes_utilises = set(st.session_state.historique_ventes[st.session_state.historique_ventes['Type_Flux'] == 'Sortie']['Code_Article'].unique())
         else:
@@ -528,22 +539,25 @@ def vue_configuration_carte():
         options_suppression = {}
         for _, r in st.session_state.base_menu.iterrows():
             deja_vendu = r['Code_Article'] in codes_utilises
-            label = f"{r['Designation']} ({r['Categorie']}) — {'🔒 Vendu (Bloqué)' if deja_vendu else '🔓 Jamais vendu (Supprimable)'}"
+            label = f"{r['Designation']} ({r['Categorie']}) — {'🔒 Vendu (Verrouillé pour cohérence comptable)' if deja_vendu else '🔓 Supprimable'}"
             options_suppression[label] = {'code': r['Code_Article'], 'bloque': deja_vendu, 'nom': r['Designation']}
             
-        choix_label = st.selectbox("Choisir l'article à supprimer :", list(options_suppression.keys()))
+        choix_label = st.selectbox("Choisir l'article à supprimer définitivement :", list(options_suppression.keys()))
         info_choix = options_suppression[choix_label]
         
         if info_choix['bloque']:
-            st.error(f"❌ Impossible de supprimer '{info_choix['nom']}'.")
+            st.error(f"⚠️ Pour protéger l'intégrité de vos rapports financiers et historiques passés, l'article '{info_choix['nom']}' ne peut pas être supprimé car il possède déjà des transactions enregistrées.")
         else:
             with st.form("form_suppression_strict"):
-                if st.form_submit_button("Confirmer la suppression définitive 🗑️", type="primary"):
+                st.warning("⚠️ Attention : Cette action supprimera définitivement le produit de la base de données locale.")
+                if st.form_submit_button("🗑️ Confirmer la Suppression Définitive", type="primary"):
                     st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != info_choix['code']].reset_index(drop=True)
-                    
                     sauvegarder_menu()
-                    st.success(f"Article supprimé et retiré du CSV local.")
+                    st.success(f"L'article a été effacé du menu.")
                     st.rerun()
+
+    st.markdown("### 📋 Aperçu Actuel de votre Carte / Menu")
+    st.dataframe(st.session_state.base_menu, use_container_width=True, hide_index=True)
 
 # 6. Système de Navigation Multi-pages
 pg = st.navigation([
