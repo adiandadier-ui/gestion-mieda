@@ -13,10 +13,38 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CONFIGURATION DU STOCKAGE LOCAL CSV ---
-CSV_MENU = "easygest_base_menu.csv"
-CSV_VENTES = "easygest_historique_ventes.csv"
-CSV_BONS = "easygest_historique_bons.csv"
+# --- INJECTION ET CONFIGURATION DU DOSSIER LOCAL C: ---
+def initialiser_dossier_easygest():
+    """
+    Vérifie l'existence du dossier 'EASYGEST APPS' sur le disque C:
+    et le crée s'il n'existe pas. Retourne le chemin d'accès sécurisé.
+    """
+    # Utilisation du préfixe 'r' pour gérer proprement les antislashs sous Windows
+    chemin_cible = r"C:\EASYGEST APPS"
+    
+    if not os.path.exists(chemin_cible):
+        try:
+            os.makedirs(chemin_cible)
+            # Message affiché uniquement en console/terminal lors du premier lancement
+            print(f" [+] Configuration initiale : Dossier créé avec succès -> {chemin_cible}")
+        except Exception as e:
+            print(f" [!] Erreur d'accès au disque C: ({e})")
+            # Solution de repli automatique dans le répertoire d'exécution si les droits sont restreints
+            chemin_cible = os.path.join(os.getcwd(), "EASYGEST_APPS_LOCAL")
+            if not os.path.exists(chemin_cible):
+                os.makedirs(chemin_cible)
+            print(f" [->] Solution de repli activée : Stockage dans -> {chemin_cible}")
+    
+    return chemin_cible
+
+# Récupération dynamique du dossier d'exploitation
+DOSSIER_EXPLOITATION = initialiser_dossier_easygest()
+
+# Liaison dynamique des fichiers de données vers le dossier local C:\EASYGEST APPS
+CSV_MENU = os.path.join(DOSSIER_EXPLOITATION, "easygest_base_menu.csv")
+CSV_VENTES = os.path.join(DOSSIER_EXPLOITATION, "easygest_historique_ventes.csv")
+CSV_BONS = os.path.join(DOSSIER_EXPLOITATION, "easygest_historique_bons.csv")
+
 
 # Fonctions de persistance et initialisation
 def initialiser_fichiers_csv():
@@ -68,7 +96,7 @@ if 'historique_bons' not in st.session_state:
             'Total': r['Total'], 'Fournisseur': r['Fournisseur']
         }
 
-# Procédures d'écriture immédiate sur le disque dur local
+# Procédures d'écriture immédiate sur le disque dur local C:
 def sauvegarder_menu():
     st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
 
@@ -181,7 +209,7 @@ def vue_prise_commande():
                     st.rerun()
                     
     with col2:
-        st.info(f"💾 **Indicateur de Stockage Réseau Local :**\n- Ventes synchronisées : `{CSV_VENTES}`\n- Base de la Carte : `{CSV_MENU}`\n- Les fichiers sont encodés en UTF-8-SIG et modifiables directement sous Excel si besoin.")
+        st.info(f"💾 **Indicateur de Stockage Réseau Local :**\n- Répertoire racine : `{DOSSIER_EXPLOITATION}`\n- Ventes synchronisées : `{CSV_VENTES}`\n- Base de la Carte : `{CSV_MENU}`\n- Les fichiers sont encodés en UTF-8-SIG et modifiables directement sous Excel si besoin.")
 
 # ==========================================
 # VUE 2 : COMMANDES ET ADDITIONS (ÉCRAN CAISSE)
@@ -219,7 +247,7 @@ def vue_commandes_additions():
             
             col_btn1, col_btn2 = st.columns(2)
             if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours').copy()].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
                 
                 sauvegarder_ventes()
@@ -227,7 +255,7 @@ def vue_commandes_additions():
                 st.rerun()
                 
             if col_btn2.button(f"Annuler la commande de la {table_selectionnee} ❌"):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours').copy()].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
                 
                 sauvegarder_ventes()
