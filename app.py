@@ -51,7 +51,6 @@ CSV_BONS = os.path.join(DOSSIER_EXPLOITATION, "easygest_historique_bons.csv")
 # Fonctions de persistance et initialisation propre (Sans données démo)
 def initialiser_fichiers_csv():
     if not os.path.exists(CSV_MENU):
-        # Structure propre et vide (avec un seul produit d'exemple pour initialiser la structure)
         df_init_menu = pd.DataFrame({
             'Code_Article': ['MENU001'],
             'Designation': ['Exemple (À supprimer après avoir créé vos produits)'],
@@ -166,7 +165,7 @@ def vue_prise_commande():
             dict_categories[label] = r['Categorie']
 
         with st.form("form_commande_strict", clear_on_submit=True):
-            liste_tables = [f"Table {i}" for i in range(1, 31)] # Étendu à 30 tables
+            liste_tables = [f"Table {i}" for i in range(1, 31)]
             table_choisie = st.selectbox("Sélectionner la Table :", liste_tables, key="cmd_table")
             item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()), key="cmd_article")
             
@@ -464,12 +463,7 @@ def vue_finances_marges():
 # ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte (Ajout / Modification / Suppression)")
-    action = st.radio("Sélectionnez l'action de gestion de votre carte :", [
-        "➕ Ajouter un Nouveau Produit", 
-        "✏️ Modifier un Produit Existant", 
-        "❌ Supprimer un Produit de la Carte",
-        "🧹 Réinitialiser le Journal des Opérations"
-    ])
+    action = st.radio("Sélectionnez l'action de gestion de votre carte :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit de la Carte"])
     st.markdown("---")
     
     if action == "➕ Ajouter un Nouveau Produit":
@@ -549,52 +543,94 @@ def vue_configuration_carte():
         choix_label = st.selectbox("Choisir l'article à supprimer définitivement :", list(options_suppression.keys()))
         
         if choix_label:
-            details_supp = options_suppression[choix_label]
-            if details_supp['bloque']:
-                st.error(f"⛔ Impossible de supprimer '{details_supp['nom']}' car des transactions y sont liées dans le Journal Général. Astuce : Effacez d'abord le Journal Général des opérations ci-dessous.")
+            info_art = options_suppression[choix_label]
+            if info_art['bloque']:
+                st.error("🚨 Cet article ne peut pas être supprimé car il possède des données de vente associées dans le Journal des Opérations. (Sécurité comptable)")
             else:
-                if st.button(f"Supprimer définitivement {details_supp['nom']} 🗑️", type="primary"):
-                    st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != details_supp['code']]
+                if st.button(f"🗑️ Confirmer la suppression définitive de {info_art['nom']}", type="primary"):
+                    st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != info_art['code']]
                     sauvegarder_menu()
-                    st.success(f"L'article a été retiré de la carte.")
+                    st.success("Produit retiré de la carte.")
                     st.rerun()
 
-    # --- NOUVELLE FONCTIONNALITÉ INCORPORÉE ---
-    elif action == "🧹 Réinitialiser le Journal des Opérations":
-        st.warning("⚠️ **Zone de Danger :** Cette action supprimera définitivement l'ensemble des historiques de ventes, des commandes passées et des réapprovisionnements présents dans le Journal Général des Opérations.")
-        st.info("💡 Note : Un clone de sauvegarde de secours sera automatiquement créé dans votre dossier `backups` avant l'effacement.")
+# ==========================================
+# 🆕 VUE 6 : ESPACE ADMINISTRATEUR (NOUVEAU)
+# ==========================================
+def vue_administrateur():
+    st.subheader("🔐 Espace Administrateur : Maintenance du système")
+    st.write("Cet écran permet d'effectuer des opérations sensibles sur la base de données de l'application.")
+    
+    st.markdown("---")
+    st.error("⚠️ **Zone de Danger : Réinitialisation du Journal Général des Opérations**")
+    st.write("Cette action supprimera **définitivement** tout l'historique des ventes, des annulations et des réapprovisionnements (les données visibles dans l'onglet mentionné sur le fichier *image_43927f.png*). Votre base de produits (la carte) restera intacte.")
+    
+    # Étape de sécurité 1 : Demande de mot de passe admin (Ici par défaut : admin123)
+    mot_de_pass = st.text_input("Veuillez saisir le mot de passe administrateur pour déverrouiller l'action :", type="password")
+    
+    if mot_de_pass == "admin123":
+        st.success("🔓 Mot de passe correct. Option de suppression débloquée.")
         
-        # Double vérification par case à cocher pour éviter les clics accidentels
-        confirmation_securite = st.checkbox("Je confirme vouloir effacer l'intégralité du journal général")
+        # Étape de sécurité 2 : Case à cocher de confirmation
+        confirmation = st.checkbox("Je comprends que cette action est irréversible et effacera l'historique complet.")
         
-        if confirmation_securite:
-            if st.button("Confirmer et Purger le Journal Général 💥", type="primary"):
-                # 1. On vide le DataFrame en gardant ses colonnes d'origine
-                st.session_state.historique_ventes = pd.DataFrame(columns=[
+        if confirmation:
+            if st.button("🚨 VIDER LE JOURNAL GÉNÉRAL DES OPÉRATIONS", type="primary", use_container_width=True):
+                # 1. On vide le DataFrame en conservant la structure exacte des colonnes
+                colonnes_ventes = [
                     'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
                     'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
-                ])
-                # 2. Sauvegarde immédiate (qui génère automatiquement le backup daté)
-                sauvegarder_ventes()
+                ]
+                st.session_state.historique_ventes = pd.DataFrame(columns=colonnes_ventes)
                 
-                st.success("🎉 Le journal général des opérations a été réinitialisé avec succès ! L'écran caisse est désormais vierge.")
+                # 2. On écrase le fichier CSV principal pour enregistrer la modification
+                st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
+                
+                # 3. Par sécurité, on force un backup horodaté de l'état "vide"
+                horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
+                chemin_backup = os.path.join(DOSSIER_BACKUPS, f"backup_ventes_REINITIALISE_{horodatage}.csv")
+                st.session_state.historique_ventes.to_csv(chemin_backup, index=False, encoding='utf-8-sig')
+                
+                st.toast("Journal des opérations effacé avec succès !", icon="🗑️")
+                st.success("Le journal général des opérations a été vidé avec succès. L'application va s'actualiser.")
+                
+                # Rafraîchissement automatique
                 st.rerun()
+    elif mot_de_pass != "":
+        st.error("❌ Mot de passe administrateur incorrect.")
 
-# --- BARRE LATÉRALE DE NAVIGATION ---
+
+# ==========================================
+# 📊 BARRE LATERALE ET ROUTAGE PRINCIPAL
+# ==========================================
 st.sidebar.title("🍳 Easygest Resto Pro+")
+st.sidebar.markdown(f"**Version 2026**")
 st.sidebar.markdown("---")
-choix_vue = st.sidebar.radio(
-    "Menu Navigation :",
-    ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements", "📊 Finances & Marges", "⚙️ Configuration Carte"]
+
+choix_menu = st.sidebar.radio(
+    "Navigation Principale :",
+    [
+        "📝 Prise de Commande",
+        "🧾 Commandes & Additions",
+        "📦 Stocks & Approvisionnements",
+        "📊 Finances & Marges",
+        "⚙️ Configuration Carte",
+        "🔐 Administrateur" # Ajout de la nouvelle option ici
+    ]
 )
 
-if choix_vue == "📝 Prise de Commande":
+st.sidebar.markdown("---")
+st.sidebar.caption("Développé pour la gestion locale fluide d'un restaurant.")
+
+# Logique de routage vers les fonctions d'affichage
+if choix_menu == "📝 Prise de Commande":
     vue_prise_commande()
-elif choix_vue == "🧾 Commandes & Additions":
+elif choix_menu == "🧾 Commandes & Additions":
     vue_commandes_additions()
-elif choix_vue == "📦 Stocks & Approvisionnements":
+elif choix_menu == "📦 Stocks & Approvisionnements":
     vue_stocks_appro()
-elif choix_vue == "📊 Finances & Marges":
+elif choix_menu == "📊 Finances & Marges":
     vue_finances_marges()
-elif choix_vue == "⚙️ Configuration Carte":
+elif choix_menu == "⚙️ Configuration Carte":
     vue_configuration_carte()
+elif choix_menu == "🔐 Administrateur":
+    vue_administrateur()
