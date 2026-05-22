@@ -19,17 +19,14 @@ def initialiser_dossier_easygest():
     Vérifie l'existence du dossier 'EASYGEST APPS' sur le disque C:
     et le crée s'il n'existe pas. Retourne le chemin d'accès sécurisé.
     """
-    # Utilisation du préfixe 'r' pour gérer proprement les antislashs sous Windows
     chemin_cible = r"C:\EASYGEST APPS"
     
     if not os.path.exists(chemin_cible):
         try:
             os.makedirs(chemin_cible)
-            # Message affiché uniquement en console/terminal lors du premier lancement
             print(f" [+] Configuration initiale : Dossier créé avec succès -> {chemin_cible}")
         except Exception as e:
             print(f" [!] Erreur d'accès au disque C: ({e})")
-            # Solution de repli automatique dans le répertoire d'exécution si les droits sont restreints
             chemin_cible = os.path.join(os.getcwd(), "EASYGEST_APPS_LOCAL")
             if not os.path.exists(chemin_cible):
                 os.makedirs(chemin_cible)
@@ -48,7 +45,6 @@ CSV_BONS = os.path.join(DOSSIER_EXPLOITATION, "easygest_historique_bons.csv")
 
 # Fonctions de persistance et initialisation
 def initialiser_fichiers_csv():
-    # Menu initial par défaut si le fichier n'existe pas encore sur le poste
     if not os.path.exists(CSV_MENU):
         df_init_menu = pd.DataFrame({
             'Code_Article': ['MENU001', 'MENU002', 'MENU003', 'MENU004', 'MENU005', 'MENU006'],
@@ -61,7 +57,6 @@ def initialiser_fichiers_csv():
         })
         df_init_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
 
-    # Historique des ventes initial
     if not os.path.exists(CSV_VENTES):
         df_init_ventes = pd.DataFrame(columns=[
             'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
@@ -69,17 +64,14 @@ def initialiser_fichiers_csv():
         ])
         df_init_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
 
-    # Historique des bons initial
     if not os.path.exists(CSV_BONS):
         df_init_bons = pd.DataFrame(columns=[
             'Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur'
         ])
         df_init_bons.to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
 
-# Appel obligatoire pour sécuriser le stockage local
 initialiser_fichiers_csv()
 
-# Chargement instantané depuis les fichiers CSV locaux vers l'état d'exécution
 if 'base_menu' not in st.session_state:
     st.session_state.base_menu = pd.read_csv(CSV_MENU)
 
@@ -96,7 +88,6 @@ if 'historique_bons' not in st.session_state:
             'Total': r['Total'], 'Fournisseur': r['Fournisseur']
         }
 
-# Procédures d'écriture immédiate sur le disque dur local C:
 def sauvegarder_menu():
     st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
 
@@ -114,7 +105,6 @@ def sauvegarder_bons():
     df_b = pd.DataFrame(liste_bons) if liste_bons else pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur'])
     df_b.to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
 
-# --- RECALCUL ET CONSOLIDATION DYNAMIQUE DES RELEVES ---
 def consolider_stocks_et_marges():
     df_art = st.session_state.base_menu.copy()
     df_vnt = st.session_state.historique_ventes.copy()
@@ -152,10 +142,11 @@ def vue_prise_commande():
             dict_menu[label] = r['Code_Article']
             dict_categories[label] = r['Categorie']
 
+        # Utilisation de clear_on_submit combiné avec des clés de session pour forcer le nettoyage
         with st.form("form_commande_strict", clear_on_submit=True):
             liste_tables = [f"Table {i}" for i in range(1, 26)]
-            table_choisie = st.selectbox("Sélectionner la Table :", liste_tables)
-            item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
+            table_choisie = st.selectbox("Sélectionner la Table :", liste_tables, key="cmd_table")
+            item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()), key="cmd_article")
             
             categorie_active = dict_categories[item_choisi] if item_choisi else "Cuisine"
             
@@ -164,23 +155,24 @@ def vue_prise_commande():
                 st.markdown("👇 *Options Spécifiques Cuisine*")
                 accomp_choisi = st.selectbox(
                     "Choisir l'accompagnement gratuit :", 
-                    ["Alloco", "Attiéké", "Frites de Pomme de terre", "Riz Blanc", "Riz Gras", "Sans accompagnement"]
+                    ["Alloco", "Attiéké", "Frites de Pomme de terre", "Riz Blanc", "Riz Gras", "Sans accompagnement"],
+                    key="cmd_accomp"
                 )
                 st.markdown("---")
             
-            quantite = st.number_input("Quantité de plats principaux :", min_value=1, value=1)
+            quantite = st.number_input("Quantité de plats principaux :", min_value=1, value=1, key="cmd_qte")
             
             st.markdown("##### 🎁 Option de Remise (Optionnel)")
-            opt_remise = st.selectbox("Taux de remise à appliquer :", [0, 5, 10, 15, 20, "Autre (Saisie manuelle)"])
+            opt_remise = st.selectbox("Taux de remise à appliquer :", [0, 5, 10, 15, 20, "Autre (Saisie manuelle)"], key="cmd_opt_remise")
             
             if opt_remise == "Autre (Saisie manuelle)":
-                taux_remise = st.number_input("Entrez le taux de remise (%) :", min_value=0, max_value=100, value=0)
+                taux_remise = st.number_input("Entrez le taux de remise (%) :", min_value=0, max_value=100, value=0, key="cmd_taux_manuel")
             else:
                 taux_remise = int(opt_remise)
                 
             motif_remise = "Aucun"
             if taux_remise > 0:
-                motif_remise = st.selectbox("Motif / Profil bénéficiaire :", ["Client Fidèle ⭐", "Ami Spécial 🤝", "Geste Commercial 🛠️"])
+                motif_remise = st.selectbox("Motif / Profil bénéficiaire :", ["Client Fidèle ⭐", "Ami Spécial 🤝", "Geste Commercial 🛠️"], key="cmd_motif")
             
             if st.form_submit_button("Envoyer la commande 🚀"):
                 code_art = dict_menu[item_choisi]
@@ -203,9 +195,14 @@ def vue_prise_commande():
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
                     
-                    # Sauvegarde automatique instantanée dans le fichier local
                     sauvegarder_ventes()
                     st.success(f"Commande envoyée pour la {table_choisie} ! (Écriture locale CSV réussie)")
+                    
+                    # --- NETTOYAGE EXPLICITE DU COMPORTEMENT DES CHAMPS ---
+                    for k in ["cmd_qte", "cmd_taux_manuel", "cmd_motif", "cmd_accomp"]:
+                        if k in st.session_state:
+                            del st.session_state[k]
+                            
                     st.rerun()
                     
     with col2:
@@ -247,7 +244,7 @@ def vue_commandes_additions():
             
             col_btn1, col_btn2 = st.columns(2)
             if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours').copy()].index
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
                 
                 sauvegarder_ventes()
@@ -255,7 +252,7 @@ def vue_commandes_additions():
                 st.rerun()
                 
             if col_btn2.button(f"Annuler la commande de la {table_selectionnee} ❌"):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours').copy()].index
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
                 
                 sauvegarder_ventes()
