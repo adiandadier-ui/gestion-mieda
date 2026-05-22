@@ -464,7 +464,12 @@ def vue_finances_marges():
 # ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte (Ajout / Modification / Suppression)")
-    action = st.radio("Sélectionnez l'action de gestion de votre carte :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit de la Carte"])
+    action = st.radio("Sélectionnez l'action de gestion de votre carte :", [
+        "➕ Ajouter un Nouveau Produit", 
+        "✏️ Modifier un Produit Existant", 
+        "❌ Supprimer un Produit de la Carte",
+        "🧹 Réinitialiser le Journal des Opérations"
+    ])
     st.markdown("---")
     
     if action == "➕ Ajouter un Nouveau Produit":
@@ -481,7 +486,6 @@ def vue_configuration_carte():
                 if not new_designation:
                     st.error("Le nom du produit est obligatoire.")
                 else:
-                    # Si l'exemple initial existe encore et qu'on ajoute un vrai produit, on nettoie proprement l'exemple
                     if len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']:
                         st.session_state.base_menu = pd.DataFrame(columns=st.session_state.base_menu.columns)
                     
@@ -543,28 +547,54 @@ def vue_configuration_carte():
             options_suppression[label] = {'code': r['Code_Article'], 'bloque': deja_vendu, 'nom': r['Designation']}
             
         choix_label = st.selectbox("Choisir l'article à supprimer définitivement :", list(options_suppression.keys()))
-        info_choix = options_suppression[choix_label]
         
-        if info_choix['bloque']:
-            st.error(f"⚠️ Pour protéger l'intégrité de vos rapports financiers et historiques passés, l'article '{info_choix['nom']}' ne peut pas être supprimé car il possède déjà des transactions enregistrées.")
-        else:
-            with st.form("form_suppression_strict"):
-                st.warning("⚠️ Attention : Cette action supprimera définitivement le produit de la base de données locale.")
-                if st.form_submit_button("🗑️ Confirmer la Suppression Définitive", type="primary"):
-                    st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != info_choix['code']].reset_index(drop=True)
+        if choix_label:
+            details_supp = options_suppression[choix_label]
+            if details_supp['bloque']:
+                st.error(f"⛔ Impossible de supprimer '{details_supp['nom']}' car des transactions y sont liées dans le Journal Général. Astuce : Effacez d'abord le Journal Général des opérations ci-dessous.")
+            else:
+                if st.button(f"Supprimer définitivement {details_supp['nom']} 🗑️", type="primary"):
+                    st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != details_supp['code']]
                     sauvegarder_menu()
-                    st.success(f"L'article a été effacé du menu.")
+                    st.success(f"L'article a été retiré de la carte.")
                     st.rerun()
 
-    st.markdown("### 📋 Aperçu Actuel de votre Carte / Menu")
-    st.dataframe(st.session_state.base_menu, use_container_width=True, hide_index=True)
+    # --- NOUVELLE FONCTIONNALITÉ INCORPORÉE ---
+    elif action == "🧹 Réinitialiser le Journal des Opérations":
+        st.warning("⚠️ **Zone de Danger :** Cette action supprimera définitivement l'ensemble des historiques de ventes, des commandes passées et des réapprovisionnements présents dans le Journal Général des Opérations.")
+        st.info("💡 Note : Un clone de sauvegarde de secours sera automatiquement créé dans votre dossier `backups` avant l'effacement.")
+        
+        # Double vérification par case à cocher pour éviter les clics accidentels
+        confirmation_securite = st.checkbox("Je confirme vouloir effacer l'intégralité du journal général")
+        
+        if confirmation_securite:
+            if st.button("Confirmer et Purger le Journal Général 💥", type="primary"):
+                # 1. On vide le DataFrame en gardant ses colonnes d'origine
+                st.session_state.historique_ventes = pd.DataFrame(columns=[
+                    'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
+                    'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
+                ])
+                # 2. Sauvegarde immédiate (qui génère automatiquement le backup daté)
+                sauvegarder_ventes()
+                
+                st.success("🎉 Le journal général des opérations a été réinitialisé avec succès ! L'écran caisse est désormais vierge.")
+                st.rerun()
 
-# 6. Système de Navigation Multi-pages
-pg = st.navigation([
-    st.Page(vue_prise_commande, title="Prise de Commande", icon="📝"),
-    st.Page(vue_commandes_additions, title="Commandes & Additions", icon="🧾"),
-    st.Page(vue_stocks_appro, title="Stocks & Approvisionnements", icon="📦"),
-    st.Page(vue_finances_marges, title="Finances & Marges", icon="📊"),
-    st.Page(vue_configuration_carte, title="Configuration Carte", icon="⚙️")
-])
-pg.run()
+# --- BARRE LATÉRALE DE NAVIGATION ---
+st.sidebar.title("🍳 Easygest Resto Pro+")
+st.sidebar.markdown("---")
+choix_vue = st.sidebar.radio(
+    "Menu Navigation :",
+    ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements", "📊 Finances & Marges", "⚙️ Configuration Carte"]
+)
+
+if choix_vue == "📝 Prise de Commande":
+    vue_prise_commande()
+elif choix_vue == "🧾 Commandes & Additions":
+    vue_commandes_additions()
+elif choix_vue == "📦 Stocks & Approvisionnements":
+    vue_stocks_appro()
+elif choix_vue == "📊 Finances & Marges":
+    vue_finances_marges()
+elif choix_vue == "⚙️ Configuration Carte":
+    vue_configuration_carte()
