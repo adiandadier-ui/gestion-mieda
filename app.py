@@ -459,7 +459,7 @@ def vue_finances_marges():
     st.dataframe(df_ventes_payees.merge(st.session_state.base_menu[['Code_Article', 'Designation']], on='Code_Article')[['Heure', 'Table', 'Designation', 'Quantite', 'Accompagnement', 'Remise_Pourcent', 'Motif_Remise', 'Total_FCFA']], use_container_width=True, hide_index=True)
 
 # ==========================================
-# VUE 5 : CONFIGURATION DE LA CARTE (PAR LE CLIENT)
+# VUE 5 : CONFIGURATION DE LA CARTE
 # ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte (Ajout / Modification / Suppression)")
@@ -554,21 +554,103 @@ def vue_configuration_carte():
                     st.rerun()
 
 # ==========================================
-# VUE 6 : ESPACE ADMINISTRATEUR (MIS À JOUR)
+# 🆕 VUE 6 : ÉCRAN CLÔTURE DE CAISSE (NOUVEAU)
+# ==========================================
+def vue_cloture_caisse():
+    st.subheader("💰 Écran Caisse : Clôture Journalière & Z de Caisse")
+    st.write(f"Date de traitement : **{datetime.now().strftime('%d/%m/%Y')}**")
+    st.markdown("---")
+    
+    # 1. Isolement des transactions du jour payées
+    df_v = st.session_state.historique_ventes
+    df_jour_paye = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'Payé')].copy()
+    df_jour_annule = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'Annulé')].copy()
+    df_jour_en_cours = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'En cours')].copy()
+    
+    # Calcul des indicateurs clés
+    ca_brut = df_jour_paye['Total_FCFA'].sum()
+    nb_couverts = int(df_jour_paye['Quantite'].sum())
+    nb_tables = df_jour_paye['Table'].nunique()
+    panier_moyen = ca_brut / nb_tables if nb_tables > 0 else 0
+    
+    # Affichage des statistiques de la journée en cours
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Recette Encaissée (FCFA)", f"{ca_brut:,.0f} F")
+    c2.metric("Total Articles Vendus", f"{nb_couverts} pcs")
+    c3.metric("Nombre de Tables Servies", f"{nb_tables}")
+    c4.metric("Panier Moyen / Table", f"{panier_moyen:,.0f} F")
+    
+    st.markdown("### 📊 Récapitulatif par Section d'Activité")
+    if not df_jour_paye.empty:
+        df_synthese = df_jour_paye.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
+        df_cat = df_synthese.groupby('Categorie').agg({'Quantite': 'sum', 'Total_FCFA': 'sum'}).reset_index()
+        df_cat.columns = ['Section / Rayon', 'Quantités Totales', 'Chiffre d\'Affaires (FCFA)']
+        st.dataframe(df_cat, use_container_width=True, hide_index=True)
+    else:
+        st.info("Aucun encaissement validé pour le moment sur cette session.")
+        
+    st.markdown("---")
+    st.markdown("### 🔒 Procédure de Clôture Définitive")
+    
+    if not df_jour_en_cours.empty:
+        st.warning(f"⚠️ **Attention :** Il reste actuellement **{len(df_jour_en_cours)} commande(s) en cours / non encaissée(s)** dans le système. Vous devez les solder ou les annuler dans l'écran Caisse avant de pouvoir procéder au verrouillage de la journée.")
+    else:
+        st.info("💡 Toutes les tables sont libres. Le système est prêt pour l'édition du rapport de clôture et l'archivage.")
+        
+        # Formulaire de validation de clôture
+        with st.form("form_cloture_definitive"):
+            st.markdown("#### Validation de la caisse physique")
+            fond_de_caisse = st.number_input("Montant restant en caisse (Fond de roulement pour le lendemain) :", min_value=0, value=15000, step=500)
+            nom_caissier = st.text_input("Nom du responsable de caisse / équipe :")
+            remarques = st.text_area("Observations / Écarts constatés (Optionnel) :")
+            
+            check_verrou = st.checkbox("Je certifie l'exactitude des montants et souhaite valider le Z de Caisse.")
+            
+            if st.form_submit_button("🔒 Générer et Archiver le Z de Caisse"):
+                if not nom_caissier:
+                    st.error("❌ Le nom du caissier est obligatoire pour signer la clôture.")
+                elif not check_verrou:
+                    st.error("❌ Veuillez cocher la case de certification pour valider l'opération.")
+                else:
+                    # 1. Création du fichier de rapport de clôture (Fichier texte lisible et imprimable)
+                    horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    nom_fichier_cloture = os.path.join(DOSSIER_BACKUPS, f"Z_CAISSE_{horodatage}.txt")
+                    
+                    with open(nom_fichier_cloture, "w", encoding="utf-8") as f:
+                        f.write(f"========================================\n")
+                        f.write(f"         RAPPORT Z DE CLOTURE CAISSE     \n")
+                        f.write(f"========================================\n")
+                        f.write(f"Date de Clôture : {datetime.now().strftime('%d/%m/%Y à %H:%M:%S')}\n")
+                        f.write(f"Responsable      : {nom_caissier}\n")
+                        f.write(f"----------------------------------------\n")
+                        f.write(f"CHIFFRE D'AFFAIRES NET : {ca_brut:,.0f} FCFA\n")
+                        f.write(f"Total Articles Vendus  : {nb_couverts} unités\n")
+                        f.write(f"Nombre de Tables       : {nb_tables}\n")
+                        f.write(f"Fond de Caisse Laissé  : {fond_de_caisse:,.0f} FCFA\n")
+                        f.write(f"Nombre d'Annulations   : {len(df_jour_annule)}\n")
+                        f.write(f"----------------------------------------\n")
+                        f.write(f"Observations :\n{remarques}\n\n")
+                        f.write(f"Signatures Équipe & Direction\n")
+                    
+                    # 2. Archive de sécurité des ventes de la journée
+                    df_v.to_csv(os.path.join(DOSSIER_BACKUPS, f"ventes_cloturees_{horodatage}.csv"), index=False, encoding='utf-8-sig')
+                    
+                    st.success(f"🎉 Clôture validée avec succès ! Rapport archivé sous : `{os.path.basename(nom_fichier_cloture)}`")
+                    st.balloons()
+
+# ==========================================
+# VUE 7 : ESPACE ADMINISTRATEUR
 # ==========================================
 def vue_administrateur():
     st.subheader("🔐 Espace Administrateur : Maintenance du système")
     st.write("Cet écran permet d'effectuer des opérations sensibles sur la base de données de l'application.")
-    
     st.markdown("---")
     
-    # Étape de sécurité 1 : Demande de mot de passe admin
     mot_de_pass = st.text_input("Veuillez saisir le mot de passe administrateur pour déverrouiller les actions de maintenance :", type="password")
     
     if mot_de_pass == "admin123":
         st.success("🔓 Accès autorisé aux outils d'administration.")
         
-        # Choix de l'action de maintenance
         maintenance_action = st.radio(
             "Choisissez l'opération de réinitialisation à effectuer :",
             [
@@ -599,19 +681,15 @@ def vue_administrateur():
 
         elif maintenance_action == "🍳 Réinitialiser le Stock CUISINE (Supprimer les articles Cuisine)":
             st.error("⚠️ **Zone de Danger : Purge Totale de la Section Cuisine**")
-            st.write("Cette action va supprimer **tous les articles typés 'Cuisine'** de votre carte ainsi que leurs lignes de mouvements associées. Les boissons et le stock du Bar resteront intacts.")
+            st.write("Cette action va supprimer **tous les articles typés 'Cuisine'** de votre carte ainsi que leurs lignes de mouvements associées.")
             
             confirm_cuisine = st.checkbox("Je confirme vouloir supprimer définitivement tous les produits et données du Stock CUISINE.")
             if confirm_cuisine:
                 if st.button("🚨 SUPPRIMER LE STOCK CUISINE & SES FLUX", type="primary", use_container_width=True):
-                    # 1. Identifier les codes articles de la Cuisine
                     codes_cuisine = st.session_state.base_menu[st.session_state.base_menu['Categorie'] == 'Cuisine']['Code_Article'].tolist()
-                    
-                    # 2. Supprimer les articles de la base menu
                     st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Categorie'] != 'Cuisine']
                     sauvegarder_menu()
                     
-                    # 3. Supprimer les flux historiques liés à ces articles pour éviter les bugs d'affichage
                     if not st.session_state.historique_ventes.empty:
                         st.session_state.historique_ventes = st.session_state.historique_ventes[~st.session_state.historique_ventes['Code_Article'].isin(codes_cuisine)]
                         sauvegarder_ventes()
@@ -621,19 +699,15 @@ def vue_administrateur():
 
         elif maintenance_action == "🍹 Réinitialiser le Stock BAR (Supprimer les articles Bar)":
             st.error("⚠️ **Zone de Danger : Purge Totale de la Section Bar**")
-            st.write("Cette action va supprimer **tous les articles typés 'Bar'** de votre carte ainsi que leurs lignes de mouvements associées. Les plats et le stock de la Cuisine resteront intacts.")
+            st.write("Cette action va supprimer **tous les articles typés 'Bar'** de votre carte ainsi que leurs lignes de mouvements associées.")
             
             confirm_bar = st.checkbox("Je confirme vouloir supprimer définitivement tous les produits et données du Stock BAR.")
             if confirm_bar:
                 if st.button("🚨 SUPPRIMER LE STOCK BAR & SES FLUX", type="primary", use_container_width=True):
-                    # 1. Identifier les codes articles du Bar
                     codes_bar = st.session_state.base_menu[st.session_state.base_menu['Categorie'] == 'Bar']['Code_Article'].tolist()
-                    
-                    # 2. Supprimer les articles de la base menu
                     st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Categorie'] != 'Bar']
                     sauvegarder_menu()
                     
-                    # 3. Supprimer les flux historiques liés à ces articles
                     if not st.session_state.historique_ventes.empty:
                         st.session_state.historique_ventes = st.session_state.historique_ventes[~st.session_state.historique_ventes['Code_Article'].isin(codes_bar)]
                         sauvegarder_ventes()
@@ -659,6 +733,7 @@ choix_menu = st.sidebar.radio(
         "🧾 Commandes & Additions",
         "📦 Stocks & Approvisionnements",
         "📊 Finances & Marges",
+        "🔒 Clôture de Caisse",  # 🆕 Nouvelle option insérée ici
         "⚙️ Configuration Carte",
         "🔐 Administrateur"
     ]
@@ -676,6 +751,8 @@ elif choix_menu == "📦 Stocks & Approvisionnements":
     vue_stocks_appro()
 elif choix_menu == "📊 Finances & Marges":
     vue_finances_marges()
+elif choix_menu == "🔒 Clôture de Caisse":
+    vue_cloture_caisse()
 elif choix_menu == "⚙️ Configuration Carte":
     vue_configuration_carte()
 elif choix_menu == "🔐 Administrateur":
