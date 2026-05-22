@@ -554,47 +554,93 @@ def vue_configuration_carte():
                     st.rerun()
 
 # ==========================================
-# 🆕 VUE 6 : ESPACE ADMINISTRATEUR (NOUVEAU)
+# VUE 6 : ESPACE ADMINISTRATEUR (MIS À JOUR)
 # ==========================================
 def vue_administrateur():
     st.subheader("🔐 Espace Administrateur : Maintenance du système")
     st.write("Cet écran permet d'effectuer des opérations sensibles sur la base de données de l'application.")
     
     st.markdown("---")
-    st.error("⚠️ **Zone de Danger : Réinitialisation du Journal Général des Opérations**")
-    st.write("Cette action supprimera **définitivement** tout l'historique des ventes, des annulations et des réapprovisionnements (les données visibles dans l'onglet mentionné sur le fichier *image_43927f.png*). Votre base de produits (la carte) restera intacte.")
     
-    # Étape de sécurité 1 : Demande de mot de passe admin (Ici par défaut : admin123)
-    mot_de_pass = st.text_input("Veuillez saisir le mot de passe administrateur pour déverrouiller l'action :", type="password")
+    # Étape de sécurité 1 : Demande de mot de passe admin
+    mot_de_pass = st.text_input("Veuillez saisir le mot de passe administrateur pour déverrouiller les actions de maintenance :", type="password")
     
     if mot_de_pass == "admin123":
-        st.success("🔓 Mot de passe correct. Option de suppression débloquée.")
+        st.success("🔓 Accès autorisé aux outils d'administration.")
         
-        # Étape de sécurité 2 : Case à cocher de confirmation
-        confirmation = st.checkbox("Je comprends que cette action est irréversible et effacera l'historique complet.")
+        # Choix de l'action de maintenance
+        maintenance_action = st.radio(
+            "Choisissez l'opération de réinitialisation à effectuer :",
+            [
+                "📁 Vider complètement le Journal des Opérations",
+                "🍳 Réinitialiser le Stock CUISINE (Supprimer les articles Cuisine)",
+                "🍹 Réinitialiser le Stock BAR (Supprimer les articles Bar)"
+            ]
+        )
         
-        if confirmation:
-            if st.button("🚨 VIDER LE JOURNAL GÉNÉRAL DES OPÉRATIONS", type="primary", use_container_width=True):
-                # 1. On vide le DataFrame en conservant la structure exacte des colonnes
-                colonnes_ventes = [
-                    'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
-                    'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
-                ]
-                st.session_state.historique_ventes = pd.DataFrame(columns=colonnes_ventes)
-                
-                # 2. On écrase le fichier CSV principal pour enregistrer la modification
-                st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
-                
-                # 3. Par sécurité, on force un backup horodaté de l'état "vide"
-                horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
-                chemin_backup = os.path.join(DOSSIER_BACKUPS, f"backup_ventes_REINITIALISE_{horodatage}.csv")
-                st.session_state.historique_ventes.to_csv(chemin_backup, index=False, encoding='utf-8-sig')
-                
-                st.toast("Journal des opérations effacé avec succès !", icon="🗑️")
-                st.success("Le journal général des opérations a été vidé avec succès. L'application va s'actualiser.")
-                
-                # Rafraîchissement automatique
-                st.rerun()
+        st.markdown("---")
+        
+        if maintenance_action == "📁 Vider complètement le Journal des Opérations":
+            st.error("⚠️ **Zone de Danger : Réinitialisation Générale des Flux**")
+            st.write("Cette action supprimera **définitivement** tout l'historique des ventes, des annulations et des réapprovisionnements. Votre liste de produits restera intacte.")
+            
+            confirm_journal = st.checkbox("Je confirme vouloir effacer l'intégralité du Journal Général des Opérations.")
+            if confirm_journal:
+                if st.button("🚨 CONFIRMER L'EFFACEMENT DU JOURNAL", type="primary", use_container_width=True):
+                    colonnes_ventes = ['Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon']
+                    st.session_state.historique_ventes = pd.DataFrame(columns=colonnes_ventes)
+                    st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
+                    
+                    horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    st.session_state.historique_ventes.to_csv(os.path.join(DOSSIER_BACKUPS, f"backup_ventes_PURGE_{horodatage}.csv"), index=False, encoding='utf-8-sig')
+                    
+                    st.success("Le journal général des opérations a été vidé.")
+                    st.rerun()
+
+        elif maintenance_action == "🍳 Réinitialiser le Stock CUISINE (Supprimer les articles Cuisine)":
+            st.error("⚠️ **Zone de Danger : Purge Totale de la Section Cuisine**")
+            st.write("Cette action va supprimer **tous les articles typés 'Cuisine'** de votre carte ainsi que leurs lignes de mouvements associées. Les boissons et le stock du Bar resteront intacts.")
+            
+            confirm_cuisine = st.checkbox("Je confirme vouloir supprimer définitivement tous les produits et données du Stock CUISINE.")
+            if confirm_cuisine:
+                if st.button("🚨 SUPPRIMER LE STOCK CUISINE & SES FLUX", type="primary", use_container_width=True):
+                    # 1. Identifier les codes articles de la Cuisine
+                    codes_cuisine = st.session_state.base_menu[st.session_state.base_menu['Categorie'] == 'Cuisine']['Code_Article'].tolist()
+                    
+                    # 2. Supprimer les articles de la base menu
+                    st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Categorie'] != 'Cuisine']
+                    sauvegarder_menu()
+                    
+                    # 3. Supprimer les flux historiques liés à ces articles pour éviter les bugs d'affichage
+                    if not st.session_state.historique_ventes.empty:
+                        st.session_state.historique_ventes = st.session_state.historique_ventes[~st.session_state.historique_ventes['Code_Article'].isin(codes_cuisine)]
+                        sauvegarder_ventes()
+                    
+                    st.success("Stock Cuisine entièrement réinitialisé et supprimé !")
+                    st.rerun()
+
+        elif maintenance_action == "🍹 Réinitialiser le Stock BAR (Supprimer les articles Bar)":
+            st.error("⚠️ **Zone de Danger : Purge Totale de la Section Bar**")
+            st.write("Cette action va supprimer **tous les articles typés 'Bar'** de votre carte ainsi que leurs lignes de mouvements associées. Les plats et le stock de la Cuisine resteront intacts.")
+            
+            confirm_bar = st.checkbox("Je confirme vouloir supprimer définitivement tous les produits et données du Stock BAR.")
+            if confirm_bar:
+                if st.button("🚨 SUPPRIMER LE STOCK BAR & SES FLUX", type="primary", use_container_width=True):
+                    # 1. Identifier les codes articles du Bar
+                    codes_bar = st.session_state.base_menu[st.session_state.base_menu['Categorie'] == 'Bar']['Code_Article'].tolist()
+                    
+                    # 2. Supprimer les articles de la base menu
+                    st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Categorie'] != 'Bar']
+                    sauvegarder_menu()
+                    
+                    # 3. Supprimer les flux historiques liés à ces articles
+                    if not st.session_state.historique_ventes.empty:
+                        st.session_state.historique_ventes = st.session_state.historique_ventes[~st.session_state.historique_ventes['Code_Article'].isin(codes_bar)]
+                        sauvegarder_ventes()
+                    
+                    st.success("Stock Bar entièrement réinitialisé et supprimé !")
+                    st.rerun()
+                    
     elif mot_de_pass != "":
         st.error("❌ Mot de passe administrateur incorrect.")
 
@@ -614,7 +660,7 @@ choix_menu = st.sidebar.radio(
         "📦 Stocks & Approvisionnements",
         "📊 Finances & Marges",
         "⚙️ Configuration Carte",
-        "🔐 Administrateur" # Ajout de la nouvelle option ici
+        "🔐 Administrateur"
     ]
 )
 
