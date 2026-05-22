@@ -636,7 +636,7 @@ def vue_cloture_caisse():
                     df_v.to_csv(os.path.join(DOSSIER_BACKUPS, f"ventes_cloturees_{horodatage}.csv"), index=False, encoding='utf-8-sig')
                     
                     st.success(f" Clôture validée avec succès ! Rapport archivé sous : `{os.path.basename(nom_fichier_cloture)}`")
-                    st.balloons()
+                    
 
 # ==========================================
 # VUE 7 : ESPACE ADMINISTRATEUR
