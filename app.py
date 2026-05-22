@@ -31,11 +31,17 @@ def initialiser_dossier_easygest():
             if not os.path.exists(chemin_cible):
                 os.makedirs(chemin_cible)
             print(f" [->] Solution de repli activée : Stockage dans -> {chemin_cible}")
+            
+    # CRÉATION AUTOMATIQUE DU DOSSIER DE SAUVEGARDE (BACKUPS)
+    dossier_backup = os.path.join(chemin_cible, "backups")
+    if not os.path.exists(dossier_backup):
+        os.makedirs(dossier_backup)
     
     return chemin_cible
 
 # Récupération dynamique du dossier d'exploitation
 DOSSIER_EXPLOITATION = initialiser_dossier_easygest()
+DOSSIER_BACKUPS = os.path.join(DOSSIER_EXPLOITATION, "backups")
 
 # Liaison dynamique des fichiers de données vers le dossier local C:\EASYGEST APPS
 CSV_MENU = os.path.join(DOSSIER_EXPLOITATION, "easygest_base_menu.csv")
@@ -88,11 +94,22 @@ if 'historique_bons' not in st.session_state:
             'Total': r['Total'], 'Fournisseur': r['Fournisseur']
         }
 
+# --- FONCTIONS DE SAUVEGARDE ET SÉCURISATION DES BACKUPS ---
 def sauvegarder_menu():
+    # 1. Mise à jour du fichier d'exploitation principal
     st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
+    # 2. Génération de la sauvegarde de sécurité datée
+    horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
+    chemin_backup = os.path.join(DOSSIER_BACKUPS, f"backup_menu_{horodatage}.csv")
+    st.session_state.base_menu.to_csv(chemin_backup, index=False, encoding='utf-8-sig')
 
 def sauvegarder_ventes():
+    # 1. Mise à jour du fichier d'exploitation principal
     st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
+    # 2. Génération de la sauvegarde de sécurité datée
+    horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
+    chemin_backup = os.path.join(DOSSIER_BACKUPS, f"backup_ventes_{horodatage}.csv")
+    st.session_state.historique_ventes.to_csv(chemin_backup, index=False, encoding='utf-8-sig')
 
 def sauvegarder_bons():
     liste_bons = []
@@ -103,7 +120,13 @@ def sauvegarder_bons():
             'Total': b['Total'], 'Fournisseur': b['Fournisseur']
         })
     df_b = pd.DataFrame(liste_bons) if liste_bons else pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur'])
+    
+    # 1. Mise à jour du fichier d'exploitation principal
     df_b.to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+    # 2. Génération de la sauvegarde de sécurité datée
+    horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
+    chemin_backup = os.path.join(DOSSIER_BACKUPS, f"backup_bons_{horodatage}.csv")
+    df_b.to_csv(chemin_backup, index=False, encoding='utf-8-sig')
 
 def consolider_stocks_et_marges():
     df_art = st.session_state.base_menu.copy()
@@ -142,7 +165,6 @@ def vue_prise_commande():
             dict_menu[label] = r['Code_Article']
             dict_categories[label] = r['Categorie']
 
-        # Utilisation de clear_on_submit combiné avec des clés de session pour forcer le nettoyage
         with st.form("form_commande_strict", clear_on_submit=True):
             liste_tables = [f"Table {i}" for i in range(1, 26)]
             table_choisie = st.selectbox("Sélectionner la Table :", liste_tables, key="cmd_table")
@@ -196,9 +218,8 @@ def vue_prise_commande():
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
                     
                     sauvegarder_ventes()
-                    st.success(f"Commande envoyée pour la {table_choisie} ! (Écriture locale CSV réussie)")
+                    st.success(f"Commande envoyée pour la {table_choisie} ! (Écriture locale & Backup réussis)")
                     
-                    # --- NETTOYAGE EXPLICITE DU COMPORTEMENT DES CHAMPS ---
                     for k in ["cmd_qte", "cmd_taux_manuel", "cmd_motif", "cmd_accomp"]:
                         if k in st.session_state:
                             del st.session_state[k]
@@ -206,7 +227,7 @@ def vue_prise_commande():
                     st.rerun()
                     
     with col2:
-        st.info(f"💾 **Indicateur de Stockage Réseau Local :**\n- Répertoire racine : `{DOSSIER_EXPLOITATION}`\n- Ventes synchronisées : `{CSV_VENTES}`\n- Base de la Carte : `{CSV_MENU}`\n- Les fichiers sont encodés en UTF-8-SIG et modifiables directement sous Excel si besoin.")
+        st.info(f"💾 **Indicateur de Stockage Réseau Local :**\n- Répertoire racine : `{DOSSIER_EXPLOITATION}`\n- Dossier Backups sécurisés : `{DOSSIER_BACKUPS}`\n- Ventes synchronisées : `{CSV_VENTES}`\n- Base de la Carte : `{CSV_MENU}`")
 
 # ==========================================
 # VUE 2 : COMMANDES ET ADDITIONS (ÉCRAN CAISSE)
@@ -244,6 +265,7 @@ def vue_commandes_additions():
             
             col_btn1, col_btn2 = st.columns(2)
             if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours').index]
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
                 
@@ -304,7 +326,7 @@ def vue_stocks_appro():
                     sauvegarder_menu()
                     sauvegarder_bons()
                     
-                    st.success(f"Bon {ref_bon} créé et enregistré en local CSV !")
+                    st.success(f"Bon {ref_bon} créé et enregistré avec sauvegarde !")
                     st.rerun()
 
     with tab_bar:
@@ -342,7 +364,7 @@ def vue_stocks_appro():
                     sauvegarder_menu()
                     sauvegarder_bons()
                     
-                    st.success(f"Bon {ref_bon} enregistré localement.")
+                    st.success(f"Bon {ref_bon} enregistré avec sauvegarde !")
                     st.rerun()
 
     with tab_bons:
@@ -470,7 +492,7 @@ def vue_configuration_carte():
                     st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvel_article], ignore_index=True)
                     
                     sauvegarder_menu()
-                    st.success(f"Article '{new_designation}' ajouté et enregistré en local !")
+                    st.success(f"Article '{new_designation}' ajouté et enregistré avec sauvegarde !")
                     st.rerun()
 
     elif action == "✏️ Modifier un Produit Existant":
@@ -494,7 +516,7 @@ def vue_configuration_carte():
                 st.session_state.base_menu.loc[idx, 'Stock_Minimum'] = edit_stock_min
                 
                 sauvegarder_menu()
-                st.success(f"Mise à jour effectuée et enregistrée dans le CSV !")
+                st.success(f"Mise à jour effectuée et enregistrée !")
                 st.rerun()
 
     elif action == "❌ Supprimer un Produit Inutilisé":
