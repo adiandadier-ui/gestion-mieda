@@ -785,4 +785,5 @@ else:
     elif choix_menu == "⚙️ Configuration Carte":
         vue_configuration_carte()
     elif choix_menu == "🔐 Administrateur":
-        vue_gestion_utilisateurs()
+        elif choix_menu == "🔐 Administrateur":
+    vue_gestion_utilisateurs_et_maintenance()  # <--- Le nouveau nom fusionné
