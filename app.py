@@ -548,7 +548,7 @@ def vue_cloture_caisse():
 # ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
-    action = st.radio("Sélectionnez une action :", ["➕ Ajouter un Nouveau Produit", "❌ Supprimer un Produit"])
+    action = st.radio("Sélectionnez une action :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit"])
     
     if action == "➕ Ajouter un Nouveau Produit":
         with st.form("form_ajout_produit", clear_on_submit=True):
@@ -559,38 +559,51 @@ def vue_configuration_carte():
             new_stock_min = c2.number_input("Stock Minimum :", min_value=1, value=5)
             new_prix_vente = c3.number_input("Prix de Vente (FCFA) :", min_value=0, value=1000)
             new_prix_achat = st.number_input("Prix d'Achat initial (FCFA) :", min_value=0, value=500)
-       
+            
             if st.form_submit_button("💾 Enregistrer le Produit"):
                 if new_designation:
-                    # Génération automatique d'un code unique basé sur la taille du menu
-                    nouveau_code = f"PROD{len(st.session_state.base_menu) + 1:03d}"
-                    nouvelle_ligne = pd.DataFrame([{
-                        'Code_Article': nouveau_code,
-                        'Designation': new_designation,
-                        'Categorie': new_categorie,
-                        'Stock_Initial': new_stock_init,
-                        'Stock_Minimum': new_stock_min,
-                        'Prix_Vente_FCFA': new_prix_vente,
-                        'Prix_Achat_Moyen_FCFA': new_prix_achat
+                    if len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']:
+                        st.session_state.base_menu = pd.DataFrame(columns=st.session_state.base_menu.columns)
+                    new_code = f"MENU{len(st.session_state.base_menu) + 1:03d}"
+                    nouvel_article = pd.DataFrame([{
+                        'Code_Article': new_code, 'Designation': new_designation, 'Categorie': new_categorie,
+                        'Stock_Initial': new_stock_init, 'Stock_Minimum': new_stock_min, 
+                        'Prix_Vente_FCFA': new_prix_vente, 'Prix_Achat_Moyen_FCFA': new_prix_achat
                     }])
-                    st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvelle_ligne], ignore_index=True)
+                    st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvel_article], ignore_index=True)
                     sauvegarder_menu()
-                    st.success(f"Article {new_designation} créé avec succès (Code: {nouveau_code}) !")
+                    st.success("Article ajouté !")
+                    st.sidebar.empty()
                     st.rerun()
-                else:
-                    st.error("La désignation est obligatoire.")
-                    
+
+    elif action == "✏️ Modifier un Produit Existant":
+        if not st.session_state.base_menu.empty:
+            dict_edit = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
+            prod = st.selectbox("Produit :", list(dict_edit.keys()))
+            code = dict_edit[prod]
+            infos = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code].iloc[0]
+            
+            with st.form("form_edit"):
+                edit_name = st.text_input("Nom :", value=infos['Designation'])
+                edit_px = st.number_input("Prix de Vente :", min_value=0, value=int(infos['Prix_Vente_FCFA']))
+                if st.form_submit_button("Sauvegarder Changes"):
+                    idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code].index
+                    st.session_state.base_menu.loc[idx, 'Designation'] = edit_name
+                    st.session_state.base_menu.loc[idx, 'Prix_Vente_FCFA'] = edit_px
+                    sauvegarder_menu()
+                    st.success("Produit modifié avec succès !")
+                    st.rerun()
+
     elif action == "❌ Supprimer un Produit":
-        if st.session_state.base_menu.empty:
-            st.info("Aucun produit dans la carte.")
-        else:
-            liste_produits = st.session_state.base_menu['Designation'].tolist()
-            produit_a_supprimer = st.selectbox("Sélectionnez le produit à retirer :", liste_produits)
+        if not st.session_state.base_menu.empty:
+            dict_del = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
+            prod_to_del = st.selectbox("Sélectionner le produit à effacer :", list(dict_del.keys()))
             
             if st.button("Supprimer définitivement 🗑️", type="primary"):
-                st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Designation'] != produit_a_supprimer]
+                code_del = dict_del[prod_to_del]
+                st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != code_del]
                 sauvegarder_menu()
-                st.success("Produit supprimé de la base.")
+                st.success(f"'{prod_to_del}' a été retiré de la carte.")
                 st.rerun()
 
 # ==========================================
