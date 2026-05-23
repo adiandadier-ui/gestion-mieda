@@ -125,7 +125,7 @@ if 'nom_utilisateur' not in st.session_state:
 
 OPTIONS_PAR_ROLE = {
     "Serveur": ["📝 Prise de Commande"],
-    "Responsable Caisse": ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements","🔒 Clôture de Caisse"],
+    "Responsable Caisse": ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements"],
     "Administrateur": [
         "📝 Prise de Commande", 
         "🧾 Commandes & Additions", 
