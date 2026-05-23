@@ -214,37 +214,54 @@ def vue_prise_commande():
 # ==========================================
 def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
+    
     if st.session_state.historique_ventes.empty:
         st.info("Aucune commande dans le système.")
         return
+
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
     
-    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général"])
+    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général des Opérations"])
+    
     with tabs_caisse[0]:
         if df_actives.empty:
-            st.success("Toutes les tables sont réglées. ✨")
+            st.success("Toutes les tables sont actuellement réglées. ✨")
         else:
-            table_selectionnee = st.selectbox("Sélectionner la table à encaisser :", sorted(df_actives['Table'].unique()))
+            tables_occupees = sorted(df_actives['Table'].unique())
+            table_selectionnee = st.selectbox("Sélectionner la table à encaisser :", tables_occupees)
             df_table_strict = df_actives[df_actives['Table'] == table_selectionnee].copy()
-            st.dataframe(df_table_strict[['Heure', 'Designation', 'Quantite', 'Total_FCFA']], use_container_width=True, hide_index=True)
+            
+            def formater_libelle(row):
+                if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans accompagnement":
+                    return f"{row['Designation']} (+ {row['Accompagnement']})"
+                return row['Designation']
+                
+            df_table_strict['Désignation Produit'] = df_table_strict.apply(formater_libelle, axis=1)
+            
+            st.dataframe(df_table_strict[['Heure', 'Categorie', 'Désignation Produit', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Total_FCFA']], use_container_width=True, hide_index=True)
             total_addition = df_table_strict['Total_FCFA'].sum()
             st.markdown(f"## **Total Net à Payer : {total_addition:,.0f} FCFA**")
             
-            c1, c2 = st.columns(2)
-            if c1.button(f"Encaisser la {table_selectionnee} 💰", type="primary"):
-                idx = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
-                st.session_state.historique_ventes.loc[idx, 'Statut'] = 'Payé'
+            col_btn1, col_btn2 = st.columns(2)
+            if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
+                st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
+                
                 sauvegarder_ventes()
+                st.success(f"La {table_selectionnee} a été validée !")
                 st.rerun()
-            if c2.button(f"Annuler la {table_selectionnee} ❌"):
-                idx = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
-                st.session_state.historique_ventes.loc[idx, 'Statut'] = 'Annulé'
+                
+            if col_btn2.button(f"Annuler l'addition de la {table_selectionnee} ❌"):
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
+                st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
+                
                 sauvegarder_ventes()
+                st.warning(f"Commandes annulées.")
                 st.rerun()
+
     with tabs_caisse[1]:
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
-
 # ==========================================
 # VUE 3 : STOCKS & APPROVISIONNEMENTS
 # ==========================================
