@@ -75,8 +75,10 @@ def initialiser_fichiers_csv():
         df_init_bons.to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
         
     if not os.path.exists(CSV_Z_HISTORIQUE):
+        # AJOUT DES COLONNES Montant_Verse ET Ecart_Caisse DANS L'INITIALISATION
         df_init_z = pd.DataFrame(columns=[
-            'Ref_Z', 'Date_Cloture', 'Caissier', 'Recette_Encaissee', 'Articles_Vendus', 'Tables_Servies', 'Fond_De_Caisse', 'Observations'
+            'Ref_Z', 'Date_Cloture', 'Caissier', 'Recette_Encaissee', 'Montant_Verse', 'Ecart_Caisse', 
+            'Articles_Vendus', 'Tables_Servies', 'Fond_De_Caisse', 'Observations'
         ])
         df_init_z.to_csv(CSV_Z_HISTORIQUE, index=False, encoding='utf-8-sig')
 
@@ -149,7 +151,6 @@ def sauvegarder_menu():
 def sauvegarder_ventes():
     st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
 
-# MODIFICATION EXTRAITE DE L'IMAGE image_eae1e3.png
 def sauvegarder_bons():
     liste_bons = [{'Ref_Bon': k, **v} for k, v in st.session_state.historique_bons.items()]
     if liste_bons:
@@ -428,7 +429,7 @@ def vue_finances_marges():
     f3.metric("Marge Réelle nette", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
 
 # ==========================================
-# 🔒 VUE 5 : CLÔTURE DE CAISSE
+# 🔒 VUE 5 : CLÔTURE DE CAISSE (PERSONNALISÉE)
 # ==========================================
 def vue_cloture_caisse():
     st.subheader("🔒 Clôture Journalière & Génération du Z de Caisse")
@@ -445,7 +446,7 @@ def vue_cloture_caisse():
     panier_moyen = ca_brut / nb_tables if nb_tables > 0 else 0
     
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Recette Encaissée (FCFA)", f"{ca_brut:,.0f} F")
+    c1.metric("Recette Attendue Système (FCFA)", f"{ca_brut:,.0f} F")
     c2.metric("Total Articles Vendus", f"{nb_couverts} pcs")
     c3.metric("Nombre de Tables Servies", f"{nb_tables}")
     c4.metric("Panier Moyen / Table", f"{panier_moyen:,.0f} F")
@@ -454,27 +455,47 @@ def vue_cloture_caisse():
         st.warning(f"⚠️ **Clôture impossible :** Il reste **{len(df_jour_en_cours)} table(s) en cours** non soldée(s).")
         return
 
-    st.info("💡 Le système est prêt pour l'édition, l'archivage numérique et l'impression automatique du Z.")
+    st.info("💡 Saisissez le montant physique versé. Le système calculera automatiquement l'écart s'il y a lieu.")
     
-    fond_de_caisse = st.number_input("Montant de fond de caisse laissé (FCFA) :", min_value=0, value=15000, key="cloture_fond")
-    nom_caissier = st.text_input("Nom du caissier responsable :", value=st.session_state.nom_utilisateur, key="cloture_user")
-    remarques = st.text_area("Observations / Écarts éventuels :", key="cloture_obs")
-    check_verrou = st.checkbox("Je certifie l'exactitude des chiffres ci-dessus.", key="cloture_check")
+    # AJOUT DE LA ZONE DE REMPLISSAGE DU MONTANT VERSÉ & FOND DE CAISSE
+    col_input1, col_input2 = st.columns(2)
+    with col_input1:
+        montant_verse = st.number_input("💵 MONTANT RÉELLEMENT VERSÉ (FCFA) :", min_value=0, value=int(ca_brut), step=500, key="cloture_verse")
+        fond_de_caisse = st.number_input("Montant de fond de caisse laissé (FCFA) :", min_value=0, value=15000, key="cloture_fond")
+    
+    with col_input2:
+        nom_caissier = st.text_input("Nom du caissier responsable :", value=st.session_state.nom_utilisateur, key="cloture_user")
+        remarques = st.text_area("Observations / Raisons de l'écart éventuel :", key="cloture_obs")
+
+    # CALCUL DE L'ÉCART DE CAISSE
+    ecart_caisse = montant_verse - ca_brut
+    
+    if ecart_caisse == 0:
+        st.success("✅ Caisse Parfaite : Le montant versé correspond à la recette attendue.")
+    elif ecart_caisse > 0:
+        st.warning(f"📈 Excédent de Caisse détecté : +{ecart_caisse:,.0f} FCFA (Plus d'argent versé que prévu).")
+    else:
+        st.error(f"📉 Déficit de Caisse détecté : {ecart_caisse:,.0f} FCFA (Manquant par rapport au système).")
+
+    check_verrou = st.checkbox("Je certifie l'exactitude des montants comptés et du versement.", key="cloture_check")
     
     if st.button("🔒 Générer, Imprimer & Archiver le Z de Caisse", type="primary", use_container_width=True):
         if not nom_caissier:
             st.error("❌ Erreur : Veuillez renseigner le nom du caissier avant de valider.")
         elif not check_verrou:
-            st.error("❌ Erreur : Vous devez cocher la case de certification des chiffres.")
+            st.error("❌ Erreur : Vous devez cocher la case de certification.")
         else:
             ref_z = f"Z-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
             date_courante = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
+            # SAUVEGARDE EN ARCHIVE HISTORIQUE AVEC LES NOUVEAUX CHAMPS
             nouvel_index_z = pd.DataFrame([{
                 'Ref_Z': ref_z,
                 'Date_Cloture': date_courante,
                 'Caissier': nom_caissier,
                 'Recette_Encaissee': ca_brut,
+                'Montant_Verse': montant_verse,
+                'Ecart_Caisse': ecart_caisse,
                 'Articles_Vendus': nb_couverts,
                 'Tables_Servies': nb_tables,
                 'Fond_De_Caisse': fond_de_caisse,
@@ -482,6 +503,9 @@ def vue_cloture_caisse():
             }])
             st.session_state.historique_z = pd.concat([st.session_state.historique_z, nouvel_index_z], ignore_index=True)
             sauvegarder_z_historique()
+            
+            # COULEUR DE L'ÉCART SUR LE TICKET IMPRIMÉ
+            color_ecart = "green" if ecart_caisse >= 0 else "red"
             
             ticket_html = f"""
             <div id="thermal-z-ticket" style="border:1px dashed #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:auto; font-size:13px; line-height:1.2;">
@@ -492,7 +516,10 @@ def vue_cloture_caisse():
                 <p><b>CAISSIER :</b> {nom_caissier}</p>
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
                 <table style="width:100%; font-size:13px;">
-                    <tr><td>RECETTE TOTALE :</td><td style="text-align:right; font-weight:bold;">{ca_brut:,.0f} F</td></tr>
+                    <tr><td>RECETTE ATTENDUE:</td><td style="text-align:right;">{ca_brut:,.0f} F</td></tr>
+                    <tr><td>MONTANT VERSÉ :</td><td style="text-align:right; font-weight:bold;">{montant_verse:,.0f} F</td></tr>
+                    <tr><td>ÉCART CAISSE   :</td><td style="text-align:right; font-weight:bold; color:{color_ecart};">{ecart_caisse:,.0f} F</td></tr>
+                    <tr><td colspan="2"><hr style="border-top: 1px dashed #aaa;"></td></tr>
                     <tr><td>ARTICLES VENDUS:</td><td style="text-align:right;">{nb_couverts} pcs</td></tr>
                     <tr><td>TABLES CLÔTURE :</td><td style="text-align:right;">{nb_tables}</td></tr>
                     <tr><td>PANIER MOYEN   :</td><td style="text-align:right;">{panier_moyen:,.0f} F</td></tr>
@@ -505,8 +532,8 @@ def vue_cloture_caisse():
             </div>
             """
             
-            st.success(f"🎉 Le rapport numérique {ref_z} a bien été archivé de manière sécurisée !")
-            st.markdown("### 🖨️ Aperçu du Ticket Envoyé à l'Imprimante")
+            st.success(f"🎉 Le rapport numérique {ref_z} incluant le montant versé a bien été archivé !")
+            st.markdown("### 🖨️ Aperçu du Ticket avec Suivi des Versements")
             st.markdown(ticket_html, unsafe_allow_html=True)
             
             js_print = f"""
