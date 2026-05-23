@@ -597,8 +597,6 @@ def vue_gestion_utilisateurs():
         "➕ Ajouter un Utilisateur", 
         "✏️ Modifier les Droits/Mots de Passe",
         "❌ Supprimer un Compte"
-        "📁 Consultation Numérique des Z", 
-        "🚨 Purges & Maintenance"
     ])
     
     # 1. Liste des comptes
@@ -665,69 +663,6 @@ def vue_gestion_utilisateurs():
                 st.session_state.base_utilisateurs = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] != del_target]
                 sauvegarder_utilisateurs()
                 st.success(f"Compte de {del_target} supprimé.")
-                st.rerun()
-                with tab_logs:
-        st.write("Retrouvez ci-dessous l'intégralité des clôtures de caisse (Rapports Z) enregistrées numériquement.")
-        if st.session_state.historique_z.empty:
-            st.info("Aucun rapport Z n'a encore été archivé numériquement dans le système.")
-        else:
-            # Affichage de la grille globale ordonnée par date descendante
-            st.dataframe(st.session_state.historique_z.sort_index(ascending=False), use_container_width=True, hide_index=True)
-            
-            st.markdown("---")
-            st.markdown("### 🔎 Inspecter & Réimprimer un Duplicata")
-            
-            liste_z = st.session_state.historique_z['Ref_Z'].tolist()[::-1]
-            z_choisi = st.selectbox("Sélectionnez la référence du rapport Z à analyser :", liste_z)
-            
-            # Récupération des informations associées à ce Z
-            infos_z = st.session_state.historique_z[st.session_state.historique_z['Ref_Z'] == z_choisi].iloc[0]
-            
-            # Reconstruction du ticket pour visualisation et réimpression
-            ticket_reconstruit = f"""
-            <div style="border:1px solid #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:10px auto; font-size:13px; line-height:1.2;">
-                <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
-                <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">DUPLICATA TICKET Z</h4>
-                <p><b>REF TICKET :</b> {infos_z['Ref_Z']}</p>
-                <p><b>DATE CLÔTURE:</b> {infos_z['Date_Cloture']}</p>
-                <p><b>CAISSIER    :</b> {infos_z['Caissier']}</p>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <table style="width:100%; font-size:13px;">
-                    <tr><td>RECETTE COLLECTÉE:</td><td style="text-align:right; font-weight:bold;">{float(infos_z['Recette_Encaissee']):,.0f} F</td></tr>
-                    <tr><td>ARTICLES VENDUS  :</td><td style="text-align:right;">{infos_z['Articles_Vendus']} pcs</td></tr>
-                    <tr><td>TABLES FACTURÉES :</td><td style="text-align:right;">{infos_z['Tables_Servies']}</td></tr>
-                    <tr><td>FOND DE CAISSE   :</td><td style="text-align:right;">{float(infos_z['Fond_De_Caisse']):,.0f} F</td></tr>
-                </table>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <p><b>OBSERVATIONS :</b><br>{infos_z['Observations']}</p>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <h4 style="text-align:center; margin:5px 0 0 0; font-size:11px; color:#555;">DUPLICATA SÉCURISÉ ADMIN</h4>
-            </div>
-            """
-            
-            col_z_1, col_z_2 = st.columns([1, 2])
-            with col_z_1:
-                st.markdown(ticket_reconstruit, unsafe_allow_html=True)
-            with col_z_2:
-                st.info("💡 Ce panneau vous permet de réimprimer un ticket à tout moment si le rouleau thermique de la caisse a subi une coupure ou une panne lors de la fermeture.")
-                if st.button("🖨️ Lancer la réimpression de ce Duplicata Z", type="secondary", use_container_width=True):
-                    js_reprint = f"""
-                    <script>
-                        var w = window.open('', '_blank', 'height=600,width=400');
-                        w.document.write('<html><head><title>Duplicata Z</title></head><body>');
-                        w.document.write(`{ticket_reconstruit}`);
-                        w.document.write('</body></html>');
-                        w.document.close();
-                        setTimeout(function() {{ w.print(); w.close(); }}, 300);
-                    </script>
-                    """
-                    components.html(js_reprint, height=0, width=0)
-
-    with tab_purge:
-        if st.checkbox("Activer l'option de réinitialisation générale du journal"):
-            if st.button("🚨 VIDER LE JOURNAL DES OPÉRATIONS", type="primary"):
-                st.session_state.historique_ventes = pd.DataFrame(columns=['Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'])
-                st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
                 st.rerun()
 
 # ==========================================
