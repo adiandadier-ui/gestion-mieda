@@ -225,7 +225,6 @@ def vue_prise_commande():
                     st.rerun()
     with col2:
         st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
-
 # ==========================================
 # VUE 2 : COMMANDES ET ADDITIONS
 # ==========================================
