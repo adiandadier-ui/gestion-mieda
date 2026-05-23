@@ -44,7 +44,6 @@ def initialiser_fichiers_csv():
     if not os.path.exists(CSV_BONS):
         pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur']).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
     if not os.path.exists(CSV_Z_HISTORIQUE):
-        # AJOUT DES COLONNES POUR LE SUIVI DES ÉCARTS DANS L'HISTORIQUE Z
         pd.DataFrame(columns=['Ref_Z', 'Date_Cloture', 'Caissier', 'Recette_Encaissee', 'Montant_Verse', 'Ecart_Caisse', 'Articles_Vendus', 'Tables_Servies', 'Fond_De_Caisse', 'Observations']).to_csv(CSV_Z_HISTORIQUE, index=False, encoding='utf-8-sig')
     if not os.path.exists(CSV_UTILISATEURS):
         pd.DataFrame({'Identifiant': ['admin', 'serveur1'], 'Mot_De_Passe': ['admin123', 'pass123'], 'Role': ['Administrateur', 'Serveur']}).to_csv(CSV_UTILISATEURS, index=False, encoding='utf-8-sig')
@@ -76,9 +75,14 @@ OPTIONS_PAR_ROLE = {
 def sauvegarder_menu(): st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
 def sauvegarder_ventes(): st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
 def sauvegarder_z_historique(): st.session_state.historique_z.to_csv(CSV_Z_HISTORIQUE, index=False, encoding='utf-8-sig')
+
+# FONCTION CORRIGÉE ICI 
 def sauvegarder_bons():
     liste_bons = [{'Ref_Bon': k, **v} for k, v in st.session_state.historique_bons.items()]
-    pd.DataFrame(liste_bons if liste_bons else columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur']).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+    if liste_bons:
+        pd.DataFrame(liste_bons).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+    else:
+        pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur']).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
 
 def consolider_stocks_et_marges():
     df_art = st.session_state.base_menu.copy()
@@ -206,9 +210,6 @@ def vue_finances_marges():
     f2.metric("Coût des Matières (Achats)", f"{cout_achats_total:,.0f} FCFA")
     f3.metric("Marge Réelle nette", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
 
-# ==========================================
-# 🔒 VUE 5 : CLÔTURE DE CAISSE (PERSONNALISÉE)
-# ==========================================
 def vue_cloture_caisse():
     st.subheader("🔒 Clôture Journalière & Génération du Z de Caisse")
     st.write(f"Date d'activité : **{datetime.now().strftime('%d/%m/%Y')}**")
@@ -235,25 +236,20 @@ def vue_cloture_caisse():
 
     st.info("💡 Le système est prêt pour l'édition, l'archivage numérique et l'impression du Z.")
     
-    # --- ZONE DE PERSONNALISATION DEMANDÉE ---
     col_input1, col_input2 = st.columns(2)
     with col_input1:
         fond_de_caisse = st.number_input("Montant de fond de caisse laissé (FCFA) :", min_value=0, value=15000, key="cloture_fond")
         nom_caissier = st.text_input("Nom du caissier responsable :", value=st.session_state.nom_utilisateur if st.session_state.nom_utilisateur else "", key="cloture_user")
     
     with col_input2:
-        # Nouveau champ pour le montant physique versé à la fin de l'exercice
         montant_verse = st.number_input("💰 Montant PHYSIQUE Réellement Versé (FCFA) :", min_value=0, value=int(ca_brut), step=500, key="cloture_verse")
-        
-        # Calcul automatique de l'écart de caisse
         ecart = montant_verse - ca_brut
         if ecart == 0:
             st.success("✅ Caisse Parfaite : Aucun écart détecté.")
         elif ecart < 0:
-            st.error(f"🚨 Manquant de Caisse : {ecart:,.0f} FCFA (Argent insuffisant en caisse !)")
+            st.error(f"🚨 Manquant de Caisse : {ecart:,.0f} FCFA")
         else:
             st.warning(f"💵 Surplus de Caisse : +{ecart:,.0f} FCFA")
-    # ----------------------------------------
 
     remarques = st.text_area("Observations / Écarts éventuels :", key="cloture_obs")
     check_verrou = st.checkbox("Je certifie l'exactitude des chiffres ci-dessus.", key="cloture_check")
@@ -268,21 +264,14 @@ def vue_cloture_caisse():
             date_courante = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             nouvel_index_z = pd.DataFrame([{
-                'Ref_Z': ref_z,
-                'Date_Cloture': date_courante,
-                'Caissier': nom_caissier,
-                'Recette_Encaissee': ca_brut,
-                'Montant_Verse': montant_verse, # Sauvegarde du montant versé
-                'Ecart_Caisse': ecart,           # Sauvegarde de l'écart
-                'Articles_Vendus': nb_couverts,
-                'Tables_Servies': nb_tables,
-                'Fond_De_Caisse': fond_de_caisse,
+                'Ref_Z': ref_z, 'Date_Cloture': date_courante, 'Caissier': nom_caissier,
+                'Recette_Encaissee': ca_brut, 'Montant_Verse': montant_verse, 'Ecart_Caisse': ecart,
+                'Articles_Vendus': nb_couverts, 'Tables_Servies': nb_tables, 'Fond_De_Caisse': fond_de_caisse,
                 'Observations': remarques if remarques else "Aucune"
             }])
             st.session_state.historique_z = pd.concat([st.session_state.historique_z, nouvel_index_z], ignore_index=True)
             sauvegarder_z_historique()
             
-            # Intégration des nouvelles données dans le modèle HTML du ticket thermique
             ticket_html = f"""
             <div id="thermal-z-ticket" style="border:1px dashed #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:auto; font-size:13px; line-height:1.2;">
                 <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
@@ -306,7 +295,6 @@ def vue_cloture_caisse():
                 <h4 style="text-align:center; margin:10px 0 0 0;">FIN DE SERVICE ARCHIVÉE</h4>
             </div>
             """
-            
             st.success(f"🎉 Le rapport numérique {ref_z} a bien été archivé de manière sécurisée !")
             st.markdown("### 🖨️ Aperçu du Ticket")
             st.markdown(ticket_html, unsafe_allow_html=True)
@@ -362,9 +350,6 @@ def vue_configuration_carte():
                     st.success("Produit mis à jour !")
                     st.rerun()
 
-# ==========================================
-# POINT D'ENTRÉE MAIN
-# ==========================================
 def main():
     if not st.session_state.authentifie:
         st.title("🔑 Connexion - Easygest Resto Pro+")
