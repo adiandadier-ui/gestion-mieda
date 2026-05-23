@@ -262,7 +262,7 @@ def vue_commandes_additions():
             
             col_btn1, col_btn2 = st.columns(2)
             if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours').index]
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
                 
                 sauvegarder_ventes()
@@ -270,7 +270,7 @@ def vue_commandes_additions():
                 st.rerun()
                 
             if col_btn2.button(f"Annuler l'addition de la {table_selectionnee} ❌"):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours').index]
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
                 
                 sauvegarder_ventes()
@@ -587,7 +587,7 @@ def vue_configuration_carte():
                 st.rerun()
 
 # ==========================================
-# 🔐 VUE 7 : GESTION DES RÔLES & UTILISATEURS (NOUVEAU)
+# 🔐 VUE 7 : GESTION COMPLETE ADMINISTRATEUR (INTEGREE)
 # ==========================================
 def vue_gestion_utilisateurs_et_maintenance():
     st.subheader("🔐 Administration : Rôles, Sécurité & Maintenance")
@@ -785,5 +785,4 @@ else:
     elif choix_menu == "⚙️ Configuration Carte":
         vue_configuration_carte()
     elif choix_menu == "🔐 Administrateur":
-        elif choix_menu == "🔐 Administrateur":
-    vue_gestion_utilisateurs_et_maintenance()  # <--- Le nouveau nom fusionné
+        vue_gestion_utilisateurs_et_maintenance()
