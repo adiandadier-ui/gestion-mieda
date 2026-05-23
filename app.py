@@ -19,6 +19,10 @@ st.set_page_config(
 # 2. INITIALISATION ET STOCKAGE LOCAL (C:)
 # ==========================================
 def initialiser_dossier_easygest():
+    """
+    Vérifie l'existence du dossier 'EASYGEST APPS' sur le disque C:
+    et le crée s'il n'existe pas.
+    """
     chemin_cible = r"C:\EASYGEST APPS"
     
     if not os.path.exists(chemin_cible):
@@ -77,7 +81,7 @@ def initialiser_fichiers_csv():
 
 initialiser_fichiers_csv()
 
-# Chargement dans le Session State
+# Chargement des données persistantes
 if 'base_menu' not in st.session_state:
     st.session_state.base_menu = pd.read_csv(CSV_MENU)
 
@@ -120,7 +124,7 @@ OPTIONS_PAR_ROLE = {
 }
 
 # ==========================================
-# 4. FONCTIONS DE PERSISTANCE & BACKUPS
+# 4. FONCTIONS DE SAUVEGARDE SUR LE DISQUE
 # ==========================================
 def sauvegarder_menu():
     st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
@@ -158,7 +162,9 @@ def consolider_stocks_et_marges():
 
 df_global = consolider_stocks_et_marges()
 
-# --- VUES ---
+# ==========================================
+# VUE 1 : PRISE DE COMMANDE
+# ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
     if len(st.session_state.base_menu) == 0 or (len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']):
@@ -203,6 +209,9 @@ def vue_prise_commande():
     with col2:
         st.info(f"👤 Connecté en tant que : **{st.session_state.role_utilisateur}**")
 
+# ==========================================
+# VUE 2 : COMMANDES ET ADDITIONS
+# ==========================================
 def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
     if st.session_state.historique_ventes.empty:
@@ -236,6 +245,9 @@ def vue_commandes_additions():
     with tabs_caisse[1]:
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
+# ==========================================
+# VUE 3 : STOCKS & APPROVISIONNEMENTS
+# ==========================================
 def vue_stocks_appro():
     st.subheader("📦 Gestion des Stocks & Approvisionnements")
     t1, t2 = st.tabs(["🍳 Cuisine", "🍹 Bar"])
@@ -244,6 +256,9 @@ def vue_stocks_appro():
     with t2:
         st.dataframe(df_global[df_global['Categorie'] == 'Bar'][['Code_Article', 'Designation', 'Quantite_Dispo']], use_container_width=True, hide_index=True)
 
+# ==========================================
+# VUE 4 : FINANCES & MARGES
+# ==========================================
 def vue_finances_marges():
     st.subheader("📊 Compte d'Exploitation & Rentabilité")
     df_p = st.session_state.historique_ventes[st.session_state.historique_ventes['Statut'] == 'Payé']
@@ -253,9 +268,9 @@ def vue_finances_marges():
     ca = df_p['Total_FCFA'].sum()
     st.metric("Chiffre d'Affaires Encaissé", f"{ca:,.0f} FCFA")
 
-# ========================================================
-# 🔒 VUE 5 : CLÔTURE DE CAISSE AVEC IMPRESSION ET DIGITALISATION
-# ========================================================
+# ==========================================
+# 🔒 VUE 5 : CLÔTURE DE CAISSE (AMÉLIORÉE)
+# ==========================================
 def vue_cloture_caisse():
     st.subheader("🔒 Clôture Journalière & Génération du Z de Caisse")
     st.write(f"Date d'activité : **{datetime.now().strftime('%d/%m/%Y')}**")
@@ -270,7 +285,7 @@ def vue_cloture_caisse():
     nb_tables = df_jour_paye['Table'].nunique() if not df_jour_paye.empty else 0
     panier_moyen = ca_brut / nb_tables if nb_tables > 0 else 0
     
-    # Rappel des KPI du haut (Similaire à l'image_a4597a.png)
+    # Indicateurs KPI du haut
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Recette Encaissée (FCFA)", f"{ca_brut:,.0f} F")
     c2.metric("Total Articles Vendus", f"{nb_couverts} pcs")
@@ -281,9 +296,8 @@ def vue_cloture_caisse():
         st.warning(f"⚠️ **Clôture impossible :** Il reste **{len(df_jour_en_cours)} table(s) en cours** non soldée(s).")
         return
 
-    st.info("💡 Le système est prêt pour l'édition et l'archivage numérique du Z de Caisse.")
+    st.info("💡 Le système est prêt pour l'édition, l'archivage numérique et l'impression automatique du Z.")
     
-    # Variables de formulaire isolées hors du st.form pour conserver le rendu HTML après soumission
     fond_de_caisse = st.number_input("Montant de fond de caisse laissé (FCFA) :", min_value=0, value=15000, key="cloture_fond")
     nom_caissier = st.text_input("Nom du caissier responsable :", key="cloture_user")
     remarques = st.text_area("Observations / Écarts éventuels :", key="cloture_obs")
@@ -295,11 +309,11 @@ def vue_cloture_caisse():
         elif not check_verrou:
             st.error("❌ Erreur : Vous devez cocher la case de certification des chiffres.")
         else:
-            # 1. Génération de la référence unique du Z
+            # 1. Génération de l'identifiant unique d'archivage
             ref_z = f"Z-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
             date_courante = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # 2. Archivage dans l'historique numérique (DataFrame & CSV global)
+            # 2. Ajout et stockage dans la base numérique pour l'Administrateur
             nouvel_index_z = pd.DataFrame([{
                 'Ref_Z': ref_z,
                 'Date_Cloture': date_courante,
@@ -313,7 +327,7 @@ def vue_cloture_caisse():
             st.session_state.historique_z = pd.concat([st.session_state.historique_z, nouvel_index_z], ignore_index=True)
             sauvegarder_z_historique()
             
-            # 3. Création du format d'impression Ticket de Caisse (HTML Thermal Style)
+            # 3. Structure HTML stylisée pour Ticket Thermique (80mm)
             ticket_html = f"""
             <div id="thermal-z-ticket" style="border:1px dashed #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:auto; font-size:13px; line-height:1.2;">
                 <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
@@ -336,12 +350,11 @@ def vue_cloture_caisse():
             </div>
             """
             
-            # Affichage du rendu visuel à l'écran
-            st.success(f"🎉 Le rapport numérique {ref_z} a été enregistré avec succès sur le disque local !")
-            st.markdown("### 🖨️ Aperçu du Ticket Imprimé")
+            st.success(f"🎉 Le rapport numérique {ref_z} a bien été archivé de manière sécurisée !")
+            st.markdown("### 🖨️ Aperçu du Ticket Envoyé à l'Imprimante")
             st.markdown(ticket_html, unsafe_allow_html=True)
             
-            # Action JavaScript injectée de manière invisible pour lancer la boîte d'impression
+            # 4. Déclenchement automatique de la fenêtre d'impression physique
             js_print = f"""
             <script>
                 var w = window.open('', '_blank', 'height=600,width=400');
@@ -354,6 +367,9 @@ def vue_cloture_caisse():
             """
             components.html(js_print, height=0, width=0)
 
+# ==========================================
+# VUE 6 : CONFIGURATION DE LA CARTE
+# ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
     with st.form("add_p"):
@@ -371,7 +387,7 @@ def vue_configuration_carte():
                 st.rerun()
 
 # ========================================================
-# 🔐 VUE 7 : ZONE ADMIN - AJOUT CONSULTATION DES NUMERIQUES Z
+# 🔐 VUE 7 : ESPACE ADMINISTRATEUR (AVEC CONSULTATION DES Z)
 # ========================================================
 def vue_administrateur():
     st.subheader("🔐 Espace Administrateur : Maintenance & Consultation")
@@ -379,58 +395,64 @@ def vue_administrateur():
     tab_logs, tab_purge = st.tabs(["📁 Consultation Numérique des Z", "🚨 Purges & Maintenance"])
     
     with tab_logs:
-        st.write("Retrouvez ici l'ensemble des clôtures archivées numériquement dans le système.")
+        st.write("Retrouvez ci-dessous l'intégralité des clôtures de caisse (Rapports Z) enregistrées numériquement.")
         if st.session_state.historique_z.empty:
-            st.info("Aucun historique numérique de clôture de caisse enregistré pour le moment.")
+            st.info("Aucun rapport Z n'a encore été archivé numériquement dans le système.")
         else:
-            # Tableau récapitulatif synthétique
+            # Affichage de la grille globale ordonnée par date descendante
             st.dataframe(st.session_state.historique_z.sort_index(ascending=False), use_container_width=True, hide_index=True)
             
-            st.markdown("### 🔎 Visualiser et Réimprimer un Ticket Z spécifique")
-            liste_z = st.session_state.historique_z['Ref_Z'].tolist()[::-1]
-            z_choisi = st.selectbox("Sélectionnez la référence du Z à inspecter :", liste_z)
+            st.markdown("---")
+            st.markdown("### 🔎 Inspecter & Réimprimer un Duplicata")
             
-            # Extraction des données de la ligne sélectionnée
+            liste_z = st.session_state.historique_z['Ref_Z'].tolist()[::-1]
+            z_choisi = st.selectbox("Sélectionnez la référence du rapport Z à analyser :", liste_z)
+            
+            # Récupération des informations associées à ce Z
             infos_z = st.session_state.historique_z[st.session_state.historique_z['Ref_Z'] == z_choisi].iloc[0]
             
-            # Reconstruction dynamique du format ticket
+            # Reconstruction du ticket pour visualisation et réimpression
             ticket_reconstruit = f"""
             <div style="border:1px solid #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:10px auto; font-size:13px; line-height:1.2;">
                 <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
-                <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">RÉÉDITION LOG ARCHIVE</h4>
+                <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">DUPLICATA TICKET Z</h4>
                 <p><b>REF TICKET :</b> {infos_z['Ref_Z']}</p>
-                <p><b>DATE     :</b> {infos_z['Date_Cloture']}</p>
-                <p><b>CAISSIER :</b> {infos_z['Caissier']}</p>
+                <p><b>DATE CLÔTURE:</b> {infos_z['Date_Cloture']}</p>
+                <p><b>CAISSIER    :</b> {infos_z['Caissier']}</p>
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
                 <table style="width:100%; font-size:13px;">
-                    <tr><td>RECETTE TOTALE :</td><td style="text-align:right; font-weight:bold;">{float(infos_z['Recette_Encaissee']):,.0f} F</td></tr>
-                    <tr><td>ARTICLES VENDUS:</td><td style="text-align:right;">{infos_z['Articles_Vendus']} pcs</td></tr>
-                    <tr><td>TABLES CLÔTURE :</td><td style="text-align:right;">{infos_z['Tables_Servies']}</td></tr>
-                    <tr><td>FOND DE CAISSE :</td><td style="text-align:right;">{float(infos_z['Fond_De_Caisse']):,.0f} F</td></tr>
+                    <tr><td>RECETTE COLLECTÉE:</td><td style="text-align:right; font-weight:bold;">{float(infos_z['Recette_Encaissee']):,.0f} F</td></tr>
+                    <tr><td>ARTICLES VENDUS  :</td><td style="text-align:right;">{infos_z['Articles_Vendus']} pcs</td></tr>
+                    <tr><td>TABLES FACTURÉES :</td><td style="text-align:right;">{infos_z['Tables_Servies']}</td></tr>
+                    <tr><td>FOND DE CAISSE   :</td><td style="text-align:right;">{float(infos_z['Fond_De_Caisse']):,.0f} F</td></tr>
                 </table>
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
                 <p><b>OBSERVATIONS :</b><br>{infos_z['Observations']}</p>
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <h4 style="text-align:center; margin:5px 0 0 0; font-size:11px;">DUPLICATA ADMINISTRATEUR</h4>
+                <h4 style="text-align:center; margin:5px 0 0 0; font-size:11px; color:#555;">DUPLICATA SÉCURISÉ ADMIN</h4>
             </div>
             """
-            st.markdown(ticket_reconstruit, unsafe_allow_html=True)
             
-            if st.button("🖨️ Lancer la réimpression du duplicata", type="secondary", use_container_width=True):
-                js_reprint = f"""
-                <script>
-                    var w = window.open('', '_blank', 'height=600,width=400');
-                    w.document.write('<html><body>');
-                    w.document.write(`{ticket_reconstruit}`);
-                    w.document.write('</body></html>');
-                    w.document.close();
-                    setTimeout(function() {{ w.print(); w.close(); }}, 300);
-                </script>
-                """
-                components.html(js_reprint, height=0, width=0)
+            col_z_1, col_z_2 = st.columns([1, 2])
+            with col_z_1:
+                st.markdown(ticket_reconstruit, unsafe_allow_html=True)
+            with col_z_2:
+                st.info("💡 Ce panneau vous permet de réimprimer un ticket à tout moment si le rouleau thermique de la caisse a subi une coupure ou une panne lors de la fermeture.")
+                if st.button("🖨️ Lancer la réimpression de ce Duplicata Z", type="secondary", use_container_width=True):
+                    js_reprint = f"""
+                    <script>
+                        var w = window.open('', '_blank', 'height=600,width=400');
+                        w.document.write('<html><head><title>Duplicata Z</title></head><body>');
+                        w.document.write(`{ticket_reconstruit}`);
+                        w.document.write('</body></html>');
+                        w.document.close();
+                        setTimeout(function() {{ w.print(); w.close(); }}, 300);
+                    </script>
+                    """
+                    components.html(js_reprint, height=0, width=0)
 
     with tab_purge:
-        if st.checkbox("Activer l'option de réinitialisation générale"):
+        if st.checkbox("Activer l'option de réinitialisation générale du journal"):
             if st.button("🚨 VIDER LE JOURNAL DES OPÉRATIONS", type="primary"):
                 st.session_state.historique_ventes = pd.DataFrame(columns=['Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'])
                 st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
@@ -471,7 +493,7 @@ else:
     st.sidebar.markdown("---")
 
     options_autorisees = OPTIONS_PAR_ROLE[st.session_state.role_utilisateur]
-    choix_menu = st.sidebar.radio("Navigation Principale :", options_autorisees, index=len(options_autorisees)-1 if st.session_state.role_utilisateur == "Administrateur" else 0)
+    choix_menu = st.sidebar.radio("Navigation Principale :", options_autorisees)
 
     st.sidebar.markdown("---")
     if st.sidebar.button("Déconnexion 🚪", type="secondary", use_container_width=True):
