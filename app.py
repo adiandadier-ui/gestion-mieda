@@ -372,19 +372,53 @@ def vue_cloture_caisse():
 # ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
-    with st.form("add_p"):
-        d = st.text_input("Nom produit :")
-        c = st.selectbox("Famille :", ["Cuisine", "Bar"])
-        p = st.number_input("Prix Vente :", value=1000)
-        if st.form_submit_button("Enregistrer"):
-            if d:
-                if len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']:
-                    st.session_state.base_menu = pd.DataFrame(columns=st.session_state.base_menu.columns)
-                code = f"MENU{len(st.session_state.base_menu) + 1:03d}"
-                n = pd.DataFrame([{'Code_Article': code, 'Designation': d, 'Categorie': c, 'Stock_Initial': 100, 'Stock_Minimum': 5, 'Prix_Vente_FCFA': p, 'Prix_Achat_Moyen_FCFA': 0}])
-                st.session_state.base_menu = pd.concat([st.session_state.base_menu, n], ignore_index=True)
-                sauvegarder_menu()
-                st.rerun()
+    action = st.radio("Sélectionnez une action :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit"])
+    
+    if action == "➕ Ajouter un Nouveau Produit":
+        with st.form("form_ajout_produit", clear_on_submit=True):
+            new_designation = st.text_input("Désignation du produit :")
+            new_categorie = st.selectbox("Famille d'article :", ["Cuisine", "Bar"])
+            c1, c2, c3 = st.columns(3)
+            new_stock_init = c1.number_input("Stock Initial :", min_value=0, value=0)
+            new_stock_min = c2.number_input("Stock Minimum :", min_value=1, value=5)
+            new_prix_vente = c3.number_input("Prix de Vente (FCFA) :", min_value=0, value=1000)
+            new_prix_achat = st.number_input("Prix d'Achat initial (FCFA) :", min_value=0, value=500)
+            
+            if st.form_submit_button("💾 Enregistrer le Produit"):
+                if new_designation:
+                    if len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']:
+                        st.session_state.base_menu = pd.DataFrame(columns=st.session_state.base_menu.columns)
+                    new_code = f"MENU{len(st.session_state.base_menu) + 1:03d}"
+                    nouvel_article = pd.DataFrame([{
+                        'Code_Article': new_code, 'Designation': new_designation, 'Categorie': new_categorie,
+                        'Stock_Initial': new_stock_init, 'Stock_Minimum': new_stock_min, 
+                        'Prix_Vente_FCFA': new_prix_vente, 'Prix_Achat_Moyen_FCFA': new_prix_achat
+                    }])
+                    st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvel_article], ignore_index=True)
+                    sauvegarder_menu()
+                    st.success("Article ajouté !")
+                    st.sidebar.empty()
+                    st.rerun()
+
+    elif action == "✏️ Modifier un Produit Existant":
+        if not st.session_state.base_menu.empty:
+            dict_edit = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
+            prod = st.selectbox("Produit :", list(dict_edit.keys()))
+            code = dict_edit[prod]
+            infos = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code].iloc[0]
+            
+            with st.form("form_edit"):
+                edit_name = st.text_input("Nom :", value=infos['Designation'])
+                edit_px = st.number_input("Prix de Vente :", min_value=0, value=int(infos['Prix_Vente_FCFA']))
+                if st.form_submit_button("Sauvegarder Changes"):
+                    idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code].index
+                    st.session_state.base_menu.loc[idx, 'Designation'] = edit_name
+                    st.session_state.base_menu.loc[idx, 'Prix_Vente_FCFA'] = edit_px
+                    sauvegarder_menu()
+                    st.rerun()
+
+    elif action == "❌ Supprimer un Produit":
+        st.info("La suppression requiert un catalogue sans flux actifs pour l'article ciblé.")
 
 # ========================================================
 # 🔐 VUE 7 : ESPACE ADMINISTRATEUR (AVEC CONSULTATION DES Z)
