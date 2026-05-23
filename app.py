@@ -129,7 +129,7 @@ OPTIONS_PAR_ROLE = {
     "Administrateur": [
         "📝 Prise de Commande", 
         "🧾 Commandes & Additions", 
-        "📦 Stocks & Approvisionnements", 
+        "📦 Stocks & Appro", 
         "📊 Finances & Marges", 
         "🔒 Clôture de Caisse", 
         "⚙️ Configuration Carte", 
