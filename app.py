@@ -134,7 +134,6 @@ if 'base_menu' not in st.session_state:
 
 if 'historique_ventes' not in st.session_state:
     st.session_state.historique_ventes = pd.read_csv(CSV_VENTES)
-    # Rétrocompatibilité si la colonne de stock brute est manquante
     if 'Code_Matiere_Stock' not in st.session_state.historique_ventes.columns:
         st.session_state.historique_ventes['Code_Matiere_Stock'] = st.session_state.historique_ventes['Code_Article']
 
@@ -181,7 +180,6 @@ def consolider_stocks_et_marges():
     df_vnt = st.session_state.historique_ventes.copy()
     
     if not df_vnt.empty:
-        # Crucial : C'est la colonne Code_Matiere_Stock qui subit les mouvements de stock réels
         df_sorties = df_vnt[(df_vnt['Type_Flux'] == 'Sortie') & (df_vnt['Statut'] != 'Annulé')].groupby('Code_Matiere_Stock')['Quantite'].sum().reset_index(name='Total_Sorties')
         df_sorties.rename(columns={'Code_Matiere_Stock': 'Code_Article'}, inplace=True)
         
@@ -256,7 +254,7 @@ if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
     st.rerun()
 
 # ==========================================
-# VUE 1 : PRISE DE COMMANDE (STOCK ROUTÉ / PRODUIT FINI CONSERVÉ)
+# VUE 1 : PRISE DE COMMANDE 
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
@@ -270,7 +268,6 @@ def vue_prise_commande():
         for _, r in st.session_state.base_menu.iterrows():
             designation_upper = str(r['Designation']).upper().strip()
             
-            # FILTRAGE : On masque totalement les matières premières de la vue serveur
             if designation_upper in MATIERES_PREMIERES_CIBLES:
                 continue
                 
@@ -297,7 +294,6 @@ def vue_prise_commande():
                 code_art_fini = dict_menu[item_choisi]
                 item_details = df_global[df_global['Code_Article'] == code_art_fini].iloc[0]
                 
-                # ÉTAPE CLÉ : On trouve quelle matière brute décompter
                 nom_matiere_brute = determiner_matiere_premiere(item_details['Designation'], item_details['Prix_Vente_FCFA'])
                 
                 code_article_a_deduire = code_art_fini
@@ -317,12 +313,11 @@ def vue_prise_commande():
                 else:
                     total_net = (quantite * item_details['Prix_Vente_FCFA']) * (1 - (opt_remise / 100))
                     
-                    # RUPTURE SÉMANTIQUE : Code_Article = Produit Fini (Affichage), Code_Matiere_Stock = Matière brute (Stock)
                     nouvelle_ligne = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
                         'Table': table_choisie, 
-                        'Code_Article': code_art_fini, # Garde le produit fini (Ex: POISSON BRAISÉ)
-                        'Code_Matiere_Stock': code_article_a_deduire, # Stock décompté (Ex: PETIT POISSON)
+                        'Code_Article': code_art_fini, 
+                        'Code_Matiere_Stock': code_article_a_deduire, 
                         'Type_Flux': 'Sortie', 
                         'Quantite': quantite, 
                         'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
@@ -341,7 +336,7 @@ def vue_prise_commande():
         st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
 
 # ==========================================
-# VUE 2 : COMMANDES & ADDITIONS (PRODUIT FINI RECONNU)
+# VUE 2 : COMMANDES & ADDITIONS
 # ==========================================
 def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
@@ -349,7 +344,6 @@ def vue_commandes_additions():
         st.info("Aucune commande dans le système.")
         return
 
-    # Jointure basée sur 'Code_Article' pour afficher le vrai produit fini vendu
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
     tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général des Opérations"])
@@ -392,23 +386,30 @@ def vue_commandes_additions():
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
 # ==========================================
-# VUE 3 : GESTION DES STOCKS
+# VUE 3 : STOCKS & APPROS (FILTRAGE RESTE UNIQUEMENT MATIÈRE PREMIÈRE)
 # ==========================================
 def vue_stocks_appro():
     st.subheader("📦 Gestion des Stocks & Bons d'Entrée")
-    tab_cuisine, tab_bar, tab_bons = st.tabs(["🍳 Stock CUISINE", "🍹 Stock BAR", "📄 Bons d'Entrée Valorisés"])
+    tab_cuisine, tab_bar, tab_bons = st.tabs(["🍳 Stock CUISINE (Ingrédients)", "🍹 Stock BAR (Boissons)", "📄 Bons d'Entrée Valorisés"])
     
     with tab_cuisine:
-        df_cuisine = df_global[df_global['Categorie'] == 'Cuisine']
-        st.dataframe(df_cuisine[['Code_Article', 'Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Vente_FCFA']], use_container_width=True, hide_index=True)
+        df_cuisine_brut = df_global[df_global['Categorie'] == 'Cuisine'].copy()
+        
+        # CHANGEMENT MAJEUR ICI : Filtrage strict pour n'afficher que les matières premières cibles
+        df_cuisine = df_cuisine_brut[df_cuisine_brut['Designation'].str.upper().str.strip().isin(MATIERES_PREMIERES_CIBLES)]
+        
+        if df_cuisine.empty:
+            st.info("Aucune matière première brute n'est détectée dans votre base de données cuisine.")
+        else:
+            st.dataframe(df_cuisine[['Code_Article', 'Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum']], use_container_width=True, hide_index=True)
         
         with st.expander("📥 Enregistrer un Achat / Approvisionnement Cuisine"):
             if df_cuisine.empty:
-                st.info("Aucun article Cuisine configuré.")
+                st.info("Configurez d'abord vos matières premières dans l'onglet Configuration Carte.")
             else:
                 with st.form("form_appro_cuisine", clear_on_submit=True):
                     dict_cuisine = {r['Designation']: r['Code_Article'] for _, r in df_cuisine.iterrows()}
-                    art_choisi = st.selectbox("Article Cuisine reçu :", list(dict_cuisine.keys()))
+                    art_choisi = st.selectbox("Ingrédient Cuisine reçu :", list(dict_cuisine.keys()))
                     qte_recue = st.number_input("Quantité achetée :", min_value=1, value=10)
                     px_achat_unit = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=1000)
                     fournisseur = st.text_input("Nom du Fournisseur :", value="Grossiste Marché")
@@ -512,7 +513,7 @@ def vue_stocks_appro():
                 components.html(js_script, height=0, width=0)
 
 # ==========================================
-# AUTRES VUES (FINANCES, CLÔTURE, CARTE, ADMIN)
+# LES AUTRES VUES
 # ==========================================
 def vue_finances_marges():
     st.subheader("📊 Compte d'Exploitation & Rentabilité Réelle")
@@ -620,6 +621,8 @@ def vue_cloture_caisse():
             </script>
             """
             components.html(js_print, height=0, width=0)
+            st.success("Clôture enregistrée !")
+            st.rerun()
 
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
@@ -661,7 +664,7 @@ def vue_configuration_carte():
                 m_designation = st.text_input("Désignation :", value=ligne_m['Designation'])
                 m_cat = st.selectbox("Catégorie :", ["Cuisine", "Bar"], index=0 if ligne_m['Categorie'] == "Cuisine" else 1)
                 m_stock_init = st.number_input("Stock Initial :", min_value=0, value=int(ligne_m['Stock_Initial']))
-                m_stock_min = m_stock_min = st.number_input("Stock Minimum :", min_value=0, value=int(ligne_m['Stock_Minimum']))
+                m_stock_min = st.number_input("Stock Minimum :", min_value=0, value=int(ligne_m['Stock_Minimum']))
                 m_px_vente = st.number_input("Prix de Vente (FCFA) :", min_value=0, value=int(ligne_m['Prix_Vente_FCFA']))
                 
                 if st.form_submit_button("Enregistrer les modifications 💾"):
