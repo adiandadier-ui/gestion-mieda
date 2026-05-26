@@ -612,3 +612,7 @@ elif choix_vue == "📊 Finances & Marges":
     vue_finances_marges()
 elif choix_vue == "🔒 Clôture de Caisse":
     vue_cloture_caisse()
+elif choix_vue == "⚙️ Configuration Carte":
+    vue_configuration_carte()
+elif choix_vue == "🔐 Administrateur":
+    vue_administrateur()
