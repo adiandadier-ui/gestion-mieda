@@ -787,14 +787,18 @@ def vue_administrateur():
                 st.session_state.historique_ventes = pd.DataFrame(columns=['Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'])
                 st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
                 st.rerun()                
-# Routage des vues
-if choix_vue == "📝 Prise de Commande":
-    vue_prise_commande()
-elif choix_vue == "🧾 Commandes & Additions":
-    vue_commandes_additions()
-elif choix_vue == "📦 Stocks & Approvisionnements":
-    vue_stocks_appro()
-elif choix_vue == "📊 Finances & Marges":
-    vue_finances_marges()
-elif choix_vue == "🔒 Clôture de Caisse":
-    vue_cloture_caisse()
+ # Routage strict vers les fonctions d'affichage
+    if choix_vue == "📝 Prise de Commande":
+        vue_prise_commande()
+    elif choix_vue == "🧾 Commandes & Additions":
+        vue_commandes_additions()
+    elif choix_vue == "📦 Stocks & Approvisionnements":
+        vue_stocks_appro()
+    elif choix_vue == "📊 Finances & Marges":
+        vue_finances_marges()
+    elif choix_vue == "🔒 Clôture de Caisse":
+        vue_cloture_caisse()
+    elif choix_vue == "⚙️ Configuration Carte":
+        vue_configuration_carte()
+    elif choix_vue == "🔐 Administrateur":
+        vue_administrateur()
