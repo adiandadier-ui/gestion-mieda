@@ -244,7 +244,7 @@ if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
     st.rerun()
 
 # ==========================================
-# VUE 1 : PRISE DE COMMANDE (AVEC FILTRAGE DES INGRÉDIENTS)
+# VUE 1 : PRISE DE COMMANDE (FILTRAGE DES INGRÉDIENTS)
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
@@ -258,7 +258,7 @@ def vue_prise_commande():
         for _, r in st.session_state.base_menu.iterrows():
             designation_upper = str(r['Designation']).upper().strip()
             
-            # FILTRAGE EXCLUSIF : On n'ajoute PAS les matières premières brutes à la liste déroulante
+            # FILTRAGE EXCLUSIF : On masque les matières premières brutes de la liste déroulante
             if designation_upper in MATIERES_PREMIERES_CIBLES:
                 continue
                 
@@ -327,7 +327,7 @@ def vue_prise_commande():
         st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
 
 # ==========================================
-# LES AUTRES VUES RESTENT COMPLÈTES ET INTACTES
+# LES AUTRES VUES
 # ==========================================
 def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
@@ -646,4 +646,63 @@ def vue_configuration_carte():
                     idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_m].index
                     st.session_state.base_menu.loc[idx, 'Designation'] = m_designation
                     st.session_state.base_menu.loc[idx, 'Categorie'] = m_cat
-                    st.session_state.base_menu.loc[idx, 'Stock_Initial'] = m_stock
+                    st.session_state.base_menu.loc[idx, 'Stock_Initial'] = m_stock_init
+                    st.session_state.base_menu.loc[idx, 'Stock_Minimum'] = m_stock_min
+                    st.session_state.base_menu.loc[idx, 'Prix_Vente_FCFA'] = m_px_vente
+                    sauvegarder_menu()
+                    st.success("Modifications enregistrées !")
+                    st.rerun()
+
+    elif action == "❌ Supprimer un Produit":
+        if st.session_state.base_menu.empty:
+            st.info("Aucun article disponible.")
+        else:
+            dict_sup = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
+            art_a_supprimer = st.selectbox("Sélectionner le produit à effacer :", list(dict_sup.keys()))
+            if st.button("Supprimer définitivement l'article 🗑️", type="primary"):
+                code_s = dict_sup[art_a_supprimer]
+                st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != code_s]
+                sauvegarder_menu()
+                st.warning(f"L'article '{art_a_supprimer}' a été retiré.")
+                st.rerun()
+
+def vue_administrateur():
+    st.subheader("🔐 Espace de Gestion des Utilisateurs")
+    with st.form("form_add_user", clear_on_submit=True):
+        st.write("### ➕ Créer un nouveau compte")
+        new_identifiant = st.text_input("Identifiant :")
+        new_password = st.text_input("Mot de passe :", type="password")
+        new_role = st.selectbox("Rôle :", ["Serveur", "Responsable Caisse", "Administrateur"])
+        
+        if st.form_submit_button("Créer le compte utilisateur 👤"):
+            if not new_identifiant or not new_password:
+                st.error("Champs requis.")
+            elif new_identifiant in st.session_state.base_utilisateurs['Identifiant'].values:
+                st.error("Cet identifiant existe déjà.")
+            else:
+                nouvel_u = pd.DataFrame([{'Identifiant': new_identifiant, 'Mot_De_Passe': new_password, 'Role': new_role}])
+                st.session_state.base_utilisateurs = pd.concat([st.session_state.base_utilisateurs, nouvel_u], ignore_index=True)
+                sauvegarder_utilisateurs()
+                st.success(f"Compte créé pour '{new_identifiant}' !")
+                st.rerun()
+                
+    st.write("### 👥 Comptes actifs")
+    st.dataframe(st.session_state.base_utilisateurs[['Identifiant', 'Role']], use_container_width=True, hide_index=True)
+
+# ==========================================
+# ROUTAGE
+# ==========================================
+if choix_vue == "📝 Prise de Commande":
+    vue_prise_commande()
+elif choix_vue == "🧾 Commandes & Additions":
+    vue_commandes_additions()
+elif choix_vue == "📦 Stocks & Approvisionnements":
+    vue_stocks_appro()
+elif choix_vue == "📊 Finances & Marges":
+    vue_finances_marges()
+elif choix_vue == "🔒 Clôture de Caisse":
+    vue_cloture_caisse()
+elif choix_vue == "⚙️ Configuration Carte":
+    vue_configuration_carte()
+elif choix_vue == "🔐 Administrateur":
+    vue_administrateur()
