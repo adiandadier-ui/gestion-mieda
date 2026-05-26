@@ -601,14 +601,18 @@ def vue_cloture_caisse():
             # Logique d'archivage ici...
             st.success("Z de caisse généré avec succès !")
 
-# Routage des vues
-if choix_vue == "📝 Prise de Commande":
-    vue_prise_commande()
-elif choix_vue == "🧾 Commandes & Additions":
-    vue_commandes_additions()
-elif choix_vue == "📦 Stocks & Approvisionnements":
-    vue_stocks_appro()
-elif choix_vue == "📊 Finances & Marges":
-    vue_finances_marges()
-elif choix_vue == "🔒 Clôture de Caisse":
-    vue_cloture_caisse()
+# Routage strict vers les fonctions d'affichage
+    if choix_vue == "📝 Prise de Commande":
+        vue_prise_commande()
+    elif choix_vue == "🧾 Commandes & Additions":
+        vue_commandes_additions()
+    elif choix_vue == "📦 Stocks & Approvisionnements":
+        vue_stocks_appro()
+    elif choix_vue == "📊 Finances & Marges":
+        vue_finances_marges()
+    elif choix_vue == "🔒 Clôture de Caisse":
+        vue_cloture_caisse()
+    elif choix_vue == "⚙️ Configuration Carte":
+        vue_configuration_carte()
+    elif choix_vue == "🔐 Administrateur":
+        vue_administrateur()
