@@ -659,7 +659,147 @@ def vue_configuration_carte():
                 sauvegarder_menu()
                 st.success(f"'{prod_to_del}' a été retiré de la carte.")
                 st.rerun()
+# ==========================================
+# 🔐 VUE 7 : VUE ADMINISTRATEUR (RÉSOUT LA NAMEERROR)
+# ==========================================
+def vue_administrateur():
+    st.subheader("🔐 Administration : Rôles, Sécurité & Maintenance")
+    
+    tab_list, tab_add, tab_edit, tab_del, tab_logs, tab_purge = st.tabs([
+        "📋 Liste des Utilisateurs", 
+        "➕ Ajouter un Utilisateur", 
+        "✏️ Modifier Droits/Mots de Passe",
+        "❌ Supprimer un Compte",
+        "📁 Consultation Numérique des Z",
+        "🚨 Purges & Maintenance"
+    ])
+    
+    # 1. Liste des comptes
+    with tab_list:
+        st.write("Comptes configurés sur cette machine :")
+        st.dataframe(
+            st.session_state.base_utilisateurs[['Identifiant', 'Role']], 
+            use_container_width=True, 
+            hide_index=True
+        )
+        
+    # 2. Création de compte
+    with tab_add:
+        with st.form("form_creer_user", clear_on_submit=True):
+            new_id = st.text_input("Identifiant / Nom de l'employé :").strip()
+            new_pwd = st.text_input("Mot de passe :", type="password")
+            new_role = st.selectbox("Attribuer un Rôle :", ["Serveur", "Responsable Caisse", "Administrateur"])
+            
+            if st.form_submit_button("Créer le compte utilisateur 💾"):
+                if not new_id or not new_pwd:
+                    st.error("Champs obligatoires manquants.")
+                elif new_id in st.session_state.base_utilisateurs['Identifiant'].values:
+                    st.error("Cet identifiant existe déjà.")
+                else:
+                    nouvel_u = pd.DataFrame([{'Identifiant': new_id, 'Mot_De_Passe': new_pwd, 'Role': new_role}])
+                    st.session_state.base_utilisateurs = pd.concat([st.session_state.base_utilisateurs, nouvel_u], ignore_index=True)
+                    sauvegarder_utilisateurs()
+                    st.success(f"Compte pour **{new_id}** configuré avec succès !")
+                    st.rerun()
+                    
+    # 3. Modification (Rôle ou Mot de passe)
+    with tab_edit:
+        users_list = st.session_state.base_utilisateurs['Identifiant'].tolist()
+        selected_u = st.selectbox("Choisir l'utilisateur à modifier :", users_list)
+        info_u = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] == selected_u].iloc[0]
+        
+        with st.form("form_edit_user"):
+            edit_pwd = st.text_input("Nouveau mot de passe (Laisser identique si inchangé) :", value=info_u['Mot_De_Passe'], type="password")
+            edit_role = st.selectbox("Nouveau Rôle :", ["Serveur", "Responsable Caisse", "Administrateur"], index=["Serveur", "Responsable Caisse", "Administrateur"].index(info_u['Role']))
+            
+            if st.form_submit_button("Mettre à jour les accès 🔄"):
+                idx = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] == selected_u].index
+                st.session_state.base_utilisateurs.loc[idx, 'Mot_De_Passe'] = edit_pwd
+                st.session_state.base_utilisateurs.loc[idx, 'Role'] = edit_role
+                sauvegarder_utilisateurs()
+                st.success("Modifications enregistrées.")
+                st.rerun()
+                
+    # 4. Suppression de compte
+    with tab_del:
+        users_to_del = st.session_state.base_utilisateurs['Identifiant'].tolist()
+        del_target = st.selectbox("Sélectionner le compte à supprimer :", users_to_del)
+        
+        if st.button("Confirmer la suppression définitive 🗑️", type="primary"):
+            target_role = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] == del_target].iloc[0]['Role']
+            nb_admins = len(st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Role'] == 'Administrateur'])
+            
+            if del_target == st.session_state.nom_utilisateur:
+                st.error("Vous ne pouvez pas supprimer votre propre compte en cours de session.")
+            elif target_role == "Administrateur" and nb_admins <= 1:
+                st.error("Action impossible. Le système requiert au moins un compte Administrateur actif.")
+            else:
+                st.session_state.base_utilisateurs = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] != del_target]
+                sauvegarder_utilisateurs()
+                st.success(f"Compte de {del_target} supprimé.")
+                st.rerun()
 
+    # 5. ANCIEN CODE INTÉGRÉ : Consultation Numérique des Z
+    with tab_logs:
+        st.write("Retrouvez ci-dessous l'intégralité des clôtures de caisse (Rapports Z) enregistrées numériquement.")
+        if st.session_state.historique_z.empty:
+            st.info("Aucun rapport Z n'a encore été archivé numériquement dans le système.")
+        else:
+            st.dataframe(st.session_state.historique_z.sort_index(ascending=False), use_container_width=True, hide_index=True)
+            st.markdown("---")
+            st.markdown("### 🔎 Inspecter & Réimprimer un Duplicata")
+            
+            liste_z = st.session_state.historique_z['Ref_Z'].tolist()[::-1]
+            z_choisi = st.selectbox("Sélectionnez la référence du rapport Z à analyser :", liste_z)
+            
+            infos_z = st.session_state.historique_z[st.session_state.historique_z['Ref_Z'] == z_choisi].iloc[0]
+            
+            ticket_reconstruit = f"""
+            <div style="border:1px solid #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:10px auto; font-size:13px; line-height:1.2;">
+                <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
+                <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">DUPLICATA TICKET Z</h4>
+                <p><b>REF TICKET :</b> {infos_z['Ref_Z']}</p>
+                <p><b>DATE CLÔTURE:</b> {infos_z['Date_Cloture']}</p>
+                <p><b>CAISSIER    :</b> {infos_z['Caissier']}</p>
+                <hr style="border-top: 1px dashed #000; margin:10px 0;">
+                <table style="width:100%; font-size:13px;">
+                    <tr><td>RECETTE COLLECTÉE:</td><td style="text-align:right; font-weight:bold;">{float(infos_z['Recette_Encaissee']):,.0f} F</td></tr>
+                    <tr><td>ARTICLES VENDUS  :</td><td style="text-align:right;">{infos_z['Articles_Vendus']} pcs</td></tr>
+                    <tr><td>TABLES FACTURÉES :</td><td style="text-align:right;">{infos_z['Tables_Servies']}</td></tr>
+                    <tr><td>FOND DE CAISSE   :</td><td style="text-align:right;">{float(infos_z['Fond_De_Caisse']):,.0f} F</td></tr>
+                </table>
+                <hr style="border-top: 1px dashed #000; margin:10px 0;">
+                <p><b>OBSERVATIONS :</b><br>{infos_z['Observations']}</p>
+                <hr style="border-top: 1px dashed #000; margin:10px 0;">
+                <h4 style="text-align:center; margin:5px 0 0 0; font-size:11px; color:#555;">DUPLICATA SÉCURISÉ ADMIN</h4>
+            </div>
+            """
+            
+            col_z_1, col_z_2 = st.columns([1, 2])
+            with col_z_1:
+                st.markdown(ticket_reconstruit, unsafe_allow_html=True)
+            with col_z_2:
+                st.info("💡 Ce panneau vous permet de réimprimer un ticket à tout moment si le rouleau thermique de la caisse a subi une coupure ou une panne lors de la fermeture.")
+                if st.button("🖨️ Lancer la réimpression de ce Duplicata Z", type="secondary", use_container_width=True):
+                    js_reprint = f"""
+                    <script>
+                        var w = window.open('', '_blank', 'height=600,width=400');
+                        w.document.write('<html><head><title>Duplicata Z</title></head><body>');
+                        w.document.write(`{ticket_reconstruit}`);
+                        w.document.write('</body></html>');
+                        w.document.close();
+                        setTimeout(function() {{ w.print(); w.close(); }}, 300);
+                    </script>
+                    """
+                    components.html(js_reprint, height=0, width=0)
+
+    # 6. ANCIEN CODE INTÉGRÉ : Purges & Maintenance
+    with tab_purge:
+        if st.checkbox("Activer l'option de réinitialisation générale du journal"):
+            if st.button("🚨 VIDER LE JOURNAL DES OPÉRATIONS", type="primary"):
+                st.session_state.historique_ventes = pd.DataFrame(columns=['Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'])
+                st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
+                st.rerun()
 # Routage des vues
 if choix_vue == "📝 Prise de Commande":
     vue_prise_commande()
