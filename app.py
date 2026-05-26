@@ -1,3 +1,34 @@
+def determiner_matiere_premiere(nom_article, prix_unitaire):
+    """
+    Détermine la ligne exacte du stock à impacter en fonction de la viande
+    ou de la catégorie de prix pour les poissons.
+    """
+    nom_article_up = nom_article.upper()
+    
+    # --- CAS DES POISSONS (3 matières premières distinctes selon le prix) ---
+    if "POISSON" in nom_article_up:
+        if prix_unitaire == 2000:
+            return "PETIT POISSON"
+        elif prix_unitaire == 4000:
+            return "MOYEN POISSON"
+        elif prix_unitaire == 6000:
+            return "GROS POISSON"
+        else:
+            # Sécurité au cas où le prix change, on cherche un mot-clé dans le nom
+            if "PETIT" in nom_article_up: return "PETIT POISSON"
+            if "MOYEN" in nom_article_up: return "MOYEN POISSON"
+            if "GROS" in nom_article_up: return "GROS POISSON"
+            return None
+            
+    # --- AUTRES VIANDES ---
+    elif "POULET" in nom_article_up:
+        return "POULET"
+    elif "LAPIN" in nom_article_up:
+        return "LAPIN"
+    elif "PINTADE" in nom_article_up:
+        return "PINTADE"
+        
+    return None
 import streamlit as st
 import pandas as pd
 import numpy as np
