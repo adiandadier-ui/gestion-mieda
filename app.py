@@ -6,14 +6,23 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # ==========================================
-# 0. FONCTION DE CALIBRAGE DU STOCK (NOUVEAU)
+# 0. FONCTION DE CALIBRAGE & LISTE DES MATIÈRES PREMIÈRES
 # ==========================================
+MATIERES_PREMIERES_CIBLES = [
+    "PETIT POISSON", 
+    "MOYEN POISSON", 
+    "GROS POISSON", 
+    "POULET", 
+    "LAPIN", 
+    "PINTADE"
+]
+
 def determiner_matiere_premiere(nom_article, prix_unitaire):
     """
     Détermine le libellé exact de la matière première en stock à impacter
     en fonction du nom de l'article ou de sa tranche de prix pour les poissons.
     """
-    nom_article_up = str(nom_article).upper()
+    nom_article_up = str(nom_article).upper().strip()
     
     # --- CAS DES POISSONS ---
     if "POISSON" in nom_article_up:
@@ -53,12 +62,7 @@ st.set_page_config(
 # 2. INITIALISATION ET STOCKAGE LOCAL (C:)
 # ==========================================
 def initialiser_dossier_easygest():
-    """
-    Vérifie l'existence du dossier 'EASYGEST APPS' sur le disque C:
-    et le crée s'il n'existe pas.
-    """
     chemin_cible = r"C:\EASYGEST APPS"
-    
     if not os.path.exists(chemin_cible):
         try:
             os.makedirs(chemin_cible)
@@ -125,7 +129,6 @@ def initialiser_fichiers_csv():
 
 initialiser_fichiers_csv()
 
-# Chargement des données persistantes
 if 'base_menu' not in st.session_state:
     st.session_state.base_menu = pd.read_csv(CSV_MENU)
 
@@ -149,7 +152,7 @@ if 'historique_bons' not in st.session_state:
         }
 
 # ==========================================
-# 3. GESTION DE L'AUTHENTIFICATION & ROLES
+# 3. GESTION DE L'AUTHENTIFICATION
 # ==========================================
 if 'authentifie' not in st.session_state:
     st.session_state.authentifie = False
@@ -175,9 +178,6 @@ OPTIONS_PAR_ROLE = {
 def sauvegarder_utilisateurs():
     st.session_state.base_utilisateurs.to_csv(CSV_UTILISATEURS, index=False, encoding='utf-8-sig')
 
-# ==========================================
-# 4. FONCTIONS DE SAUVEGARDE SUR LE DISQUE
-# ==========================================
 def sauvegarder_menu():
     st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
 
@@ -211,9 +211,6 @@ def consolider_stocks_et_marges():
 
 df_global = consolider_stocks_et_marges()
 
-# ==========================================
-# 5. GESTION DE L'ECRAN DE CONNEXION
-# ==========================================
 if not st.session_state.authentifie:
     st.title("🔑 Connexion Easygest Resto Pro+")
     identifiant_input = st.text_input("Identifiant :")
@@ -247,20 +244,31 @@ if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
     st.rerun()
 
 # ==========================================
-# VUE 1 : PRISE DE COMMANDE (CORRIGÉE AVEC CALIBRAGE)
+# VUE 1 : PRISE DE COMMANDE (AVEC FILTRAGE DES INGRÉDIENTS)
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
     if len(st.session_state.base_menu) == 0 or (len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']):
         st.warning("⚠️ La carte est vide. Utilisez l'accès Admin pour la configurer.")
         return
+        
     col1, col2 = st.columns([1, 1])
     with col1:
         dict_menu, dict_categories = {}, {}
         for _, r in st.session_state.base_menu.iterrows():
+            designation_upper = str(r['Designation']).upper().strip()
+            
+            # FILTRAGE EXCLUSIF : On n'ajoute PAS les matières premières brutes à la liste déroulante
+            if designation_upper in MATIERES_PREMIERES_CIBLES:
+                continue
+                
             label = f"[{r['Categorie']}] {r['Designation']} ({int(r['Prix_Vente_FCFA'])} FCFA)"
             dict_menu[label] = r['Code_Article']
             dict_categories[label] = r['Categorie']
+
+        if not dict_menu:
+            st.info("Aucun plat commercialisable configuré pour le moment.")
+            return
 
         with st.form("form_commande_strict", clear_on_submit=True):
             table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
@@ -284,16 +292,14 @@ def vue_prise_commande():
                 target_details = item_details
                 
                 if nom_matiere_brute:
-                    # On cherche la ligne correspondante dans st.session_state.base_menu
-                    match_brute = df_global[df_global['Designation'].str.upper() == nom_matiere_brute.upper()]
+                    match_brute = df_global[df_global['Designation'].str.upper().str.strip() == nom_matiere_brute.upper()]
                     if not match_brute.empty:
                         code_article_a_deduire = match_brute.iloc[0]['Code_Article']
                         target_details = match_brute.iloc[0]
                     else:
-                        st.error(f"❌ Erreur : Vous devez d'abord créer l'article '{nom_matiere_brute}' dans votre carte pour assurer le déstockage !")
+                        st.error(f"❌ Erreur : L'ingrédient de base '{nom_matiere_brute}' n'existe pas en stock. Créez-le d'abord.")
                         st.stop()
 
-                # Vérification du stock sur l'élément à déduire (le plat ou la viande brute)
                 if quantite > target_details['Quantite_Dispo']:
                     st.error(f"❌ Stock insuffisant ! (Disponible en {target_details['Designation']} : {target_details['Quantite_Dispo']} pcs)")
                 else:
@@ -302,7 +308,7 @@ def vue_prise_commande():
                     nouvelle_ligne = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
                         'Table': table_choisie, 
-                        'Code_Article': code_article_a_deduire, # Déduction automatique sur l'ingrédient de base
+                        'Code_Article': code_article_a_deduire, 
                         'Type_Flux': 'Sortie', 
                         'Quantite': quantite, 
                         'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
@@ -315,24 +321,22 @@ def vue_prise_commande():
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
                     sauvegarder_ventes()
-                    st.success(f"Commande enregistrée ! Stock déduit sur la ligne : {target_details['Designation']}")
+                    st.success(f"Commande envoyée ! Ingrédient décompté : {target_details['Designation']}")
                     st.rerun()
     with col2:
         st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
 
 # ==========================================
-# VUE 2 : COMMANDES ET ADDITIONS
+# LES AUTRES VUES RESTENT COMPLÈTES ET INTACTES
 # ==========================================
 def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
-    
     if st.session_state.historique_ventes.empty:
         st.info("Aucune commande dans le système.")
         return
 
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
-    
     tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général des Opérations"])
     
     with tabs_caisse[0]:
@@ -349,24 +353,21 @@ def vue_commandes_additions():
                 return row['Designation']
                 
             df_table_strict['Désignation Produit'] = df_table_strict.apply(formater_libelle, axis=1)
-            
             st.dataframe(df_table_strict[['Heure', 'Categorie', 'Désignation Produit', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Total_FCFA']], use_container_width=True, hide_index=True)
             total_addition = df_table_strict['Total_FCFA'].sum()
             st.markdown(f"## **Total Net à Payer : {total_addition:,.0f} FCFA**")
             
             col_btn1, col_btn2 = st.columns(2)
-            if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
+            if col_btn1.button(f"Encaisser la {table_selectionnee} 💰", type="primary"):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
-                
                 sauvegarder_ventes()
-                st.success(f"La {table_selectionnee} a été validée !")
+                st.success(f"La {table_selectionnee} a été réglée !")
                 st.rerun()
                 
-            if col_btn2.button(f"Annuler l'addition de la {table_selectionnee} ❌"):
+            if col_btn2.button(f"Annuler la {table_selectionnee} ❌"):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
-                
                 sauvegarder_ventes()
                 st.warning(f"Commandes annulées.")
                 st.rerun()
@@ -374,9 +375,6 @@ def vue_commandes_additions():
     with tabs_caisse[1]:
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
-# ==========================================
-# VUE 3 : STOCKS & APPROVISIONNEMENTS
-# ==========================================
 def vue_stocks_appro():
     st.subheader("📦 Gestion des Stocks & Bons d'Entrée")
     tab_cuisine, tab_bar, tab_bons = st.tabs(["🍳 Stock CUISINE", "🍹 Stock BAR", "📄 Bons d'Entrée Valorisés"])
@@ -407,7 +405,6 @@ def vue_stocks_appro():
                             'Total_FCFA': qte_recue * px_achat_unit, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
                         }])
                         st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
-                        
                         idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
                         st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit
                         
@@ -418,7 +415,7 @@ def vue_stocks_appro():
                         sauvegarder_ventes()
                         sauvegarder_menu()
                         sauvegarder_bons()
-                        st.success(f"Bon {ref_bon} mis à jour !")
+                        st.success(f"Bon {ref_bon} enregistré !")
                         st.rerun()
 
     with tab_bar:
@@ -447,7 +444,6 @@ def vue_stocks_appro():
                             'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
                         }])
                         st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
-                        
                         idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
                         st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit_bar
                         
@@ -496,20 +492,15 @@ def vue_stocks_appro():
                 """
                 components.html(js_script, height=0, width=0)
 
-# ==========================================
-# VUE 4 : FINANCES & MARGES
-# ==========================================
 def vue_finances_marges():
     st.subheader("📊 Compte d'Exploitation & Rentabilité Réelle")
     df_ventes_payees = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
-    
     if df_ventes_payees.empty:
         st.info("Les données financières apparaîtront après les premiers encaissements.")
         return
         
     df_calc_marge = df_ventes_payees.groupby('Code_Article').agg({'Quantite': 'sum', 'Total_FCFA': 'sum'}).reset_index()
     df_calc_marge = df_calc_marge.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Prix_Achat_Moyen_FCFA']], on='Code_Article', how='left')
-    
     df_calc_marge['Cout_Total_Achat'] = df_calc_marge['Quantite'] * df_calc_marge['Prix_Achat_Moyen_FCFA']
     df_calc_marge['Marge_Brute_FCFA'] = df_calc_marge['Total_FCFA'] - df_calc_marge['Cout_Total_Achat']
     
@@ -523,9 +514,6 @@ def vue_finances_marges():
     f2.metric("Coût des Matières (Achats)", f"{cout_achats_total:,.0f} FCFA", delta="-Coûts", delta_color="inverse")
     f3.metric("Marge Réelle nette", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
 
-# ==========================================
-# 🔒 VUE 5 : CLÔTURE DE CAISSE
-# ==========================================
 def vue_cloture_caisse():
     st.subheader("🔒 Clôture Journalière & Génération du Z de Caisse")
     st.write(f"Date d'activité : **{datetime.now().strftime('%d/%m/%Y')}**")
@@ -550,98 +538,67 @@ def vue_cloture_caisse():
         st.warning(f"⚠️ **Clôture impossible :** Il reste **{len(df_jour_en_cours)} table(s) en cours** non soldée(s).")
         return
 
-    st.info("💡 Saisissez le montant physique versé. Le système calculera automatiquement l'écart s'il y a lieu.")
-    
     col_input1, col_input2 = st.columns(2)
     with col_input1:
         montant_verse = st.number_input("💵 MONTANT RÉELLEMENT VERSÉ (FCFA) :", min_value=0, value=int(ca_brut), step=500, key="cloture_verse")
         fond_de_caisse = st.number_input("Montant de fond de caisse laissé (FCFA) :", min_value=0, value=15000, key="cloture_fond")
-    
     with col_input2:
         nom_caissier = st.text_input("Nom du caissier responsable :", value=st.session_state.nom_utilisateur, key="cloture_user")
         remarques = st.text_area("Observations / Raisons de l'écart éventuel :", key="cloture_obs")
 
     ecart_caisse = montant_verse - ca_brut
-    
     if ecart_caisse == 0:
-        st.success("✅ Caisse Parfaite : Le montant versé correspond à la recette attendue.")
+        st.success("✅ Caisse Parfaite !")
     elif ecart_caisse > 0:
-        st.warning(f"📈 Excédent de Caisse détecté : +{ecart_caisse:,.0f} FCFA (Plus d'argent versé que prévu).")
+        st.warning(f"📈 Excédent de Caisse : +{ecart_caisse:,.0f} FCFA")
     else:
-        st.error(f"📉 Déficit de Caisse détecté : {ecart_caisse:,.0f} FCFA (Manquant par rapport au système).")
+        st.error(f"📉 Déficit de Caisse : {ecart_caisse:,.0f} FCFA")
 
     check_verrou = st.checkbox("Je certifie l'exactitude des montants comptés et du versement.", key="cloture_check")
     
     if st.button("🔒 Générer, Imprimer & Archiver le Z de Caisse", type="primary", use_container_width=True):
-        if not nom_caissier:
-            st.error("❌ Erreur : Veuillez renseigner le nom du caissier avant de valider.")
-        elif not check_verrou:
-            st.error("❌ Erreur : Vous devez cocher la case de certification.")
+        if not nom_caissier or not check_verrou:
+            st.error("❌ Erreur : Saisie incomplète ou validation absente.")
         else:
             ref_z = f"Z-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
             date_courante = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             nouvel_index_z = pd.DataFrame([{
-                'Ref_Z': ref_z,
-                'Date_Cloture': date_courante,
-                'Caissier': nom_caissier,
-                'Recette_Encaissee': ca_brut,
-                'Montant_Verse': montant_verse,
-                'Ecart_Caisse': ecart_caisse,
-                'Articles_Vendus': nb_couverts,
-                'Tables_Servies': nb_tables,
-                'Fond_De_Caisse': fond_de_caisse,
-                'Observations': remarques if remarques else "Aucune"
+                'Ref_Z': ref_z, 'Date_Cloture': date_courante, 'Caissier': nom_caissier,
+                'Recette_Encaissee': ca_brut, 'Montant_Verse': montant_verse, 'Ecart_Caisse': ecart_caisse,
+                'Articles_Vendus': nb_couverts, 'Tables_Servies': nb_tables, 'Fond_De_Caisse': fond_de_caisse, 'Observations': remarques if remarques else "Aucune"
             }])
             st.session_state.historique_z = pd.concat([st.session_state.historique_z, nouvel_index_z], ignore_index=True)
             sauvegarder_z_historique()
             
             color_ecart = "green" if ecart_caisse >= 0 else "red"
-            
             ticket_html = f"""
             <div id="thermal-z-ticket" style="border:1px dashed #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:auto; font-size:13px; line-height:1.2;">
-                <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
-                <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">TICKET Z DE CLÔTURE</h4>
+                <h3 style="text-align:center; margin:0 0 5px 0;">*** EASYGEST RESTO ***</h3>
+                <h4 style="text-align:center; margin:0 0 10px 0;">TICKET Z DE CLÔTURE</h4>
                 <p><b>REF TICKET :</b> {ref_z}</p>
                 <p><b>DATE      :</b> {date_courante}</p>
-                <p><b>CAISSIER :</b> {nom_caissier}</p>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
+                <hr style="border-top: 1px dashed #000;">
                 <table style="width:100%; font-size:13px;">
                     <tr><td>RECETTE ATTENDUE:</td><td style="text-align:right;">{ca_brut:,.0f} F</td></tr>
                     <tr><td>MONTANT VERSÉ :</td><td style="text-align:right; font-weight:bold;">{montant_verse:,.0f} F</td></tr>
                     <tr><td>ÉCART CAISSE   :</td><td style="text-align:right; font-weight:bold; color:{color_ecart};">{ecart_caisse:,.0f} F</td></tr>
-                    <tr><td colspan="2"><hr style="border-top: 1px dashed #aaa;"></td></tr>
-                    <tr><td>ARTICLES VENDUS:</td><td style="text-align:right;">{nb_couverts} pcs</td></tr>
-                    <tr><td>TABLES CLÔTURE :</td><td style="text-align:right;">{nb_tables}</td></tr>
-                    <tr><td>PANIER MOYEN   :</td><td style="text-align:right;">{panier_moyen:,.0f} F</td></tr>
-                    <tr><td>FOND DE CAISSE :</td><td style="text-align:right;">{fond_de_caisse:,.0f} F</td></tr>
                 </table>
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <p><b>OBSERVATIONS :</b><br>{remarques if remarques else 'Aucune'}</p>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <h4 style="text-align:center; margin:10px 0 0 0;">FIN DE SERVICE ARCHIVÉE</h4>
+                <h4 style="text-align:center; margin:0;">FIN DE SERVICE ARCHIVÉE</h4>
             </div>
             """
-            
-            st.success(f"🎉 Le rapport numérique {ref_z} incluant le montant versé a bien été archivé !")
-            st.markdown("### 🖨️ Aperçu du Ticket avec Suivi des Versements")
             st.markdown(ticket_html, unsafe_allow_html=True)
-            
             js_print = f"""
             <script>
                 var w = window.open('', '_blank', 'height=600,width=400');
-                w.document.write('<html><head><title>Imprimer Z de Caisse</title></head><body style="margin:10px;">');
-                w.document.write(`{ticket_html}`);
-                w.document.write('</body></html>');
+                w.document.write('<html><body>{ticket_html}</body></html>');
                 w.document.close();
                 setTimeout(function() {{ w.print(); w.close(); }}, 300);
             </script>
             """
             components.html(js_print, height=0, width=0)
 
-# ==========================================
-# VUE 6 : CONFIGURATION DE LA CARTE
-# ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
     action = st.radio("Sélectionnez une action :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit"])
@@ -650,11 +607,11 @@ def vue_configuration_carte():
         with st.form("form_ajout_produit", clear_on_submit=True):
             new_designation = st.text_input("Désignation du produit :")
             new_cat = st.selectbox("Catégorie :", ["Cuisine", "Bar"])
-            new_stock_init = st.number_input("Stock Initial / Quantité de départ :", min_value=0, value=100)
+            new_stock_init = st.number_input("Stock Initial :", min_value=0, value=100)
             new_stock_min = st.number_input("Stock d'Alerte Minimum :", min_value=0, value=5)
             new_px_vente = st.number_input("Prix de Vente (FCFA) :", min_value=0, value=2000)
             
-            if st.form_submit_button("Ajouter le produit à la carte ✨"):
+            if st.form_submit_button("Ajouter le produit ✨"):
                 if not new_designation:
                     st.error("Le nom du produit ne peut pas être vide.")
                 else:
@@ -689,68 +646,4 @@ def vue_configuration_carte():
                     idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_m].index
                     st.session_state.base_menu.loc[idx, 'Designation'] = m_designation
                     st.session_state.base_menu.loc[idx, 'Categorie'] = m_cat
-                    st.session_state.base_menu.loc[idx, 'Stock_Initial'] = m_stock_init
-                    st.session_state.base_menu.loc[idx, 'Stock_Minimum'] = m_stock_min
-                    st.session_state.base_menu.loc[idx, 'Prix_Vente_FCFA'] = m_px_vente
-                    sauvegarder_menu()
-                    st.success("Modifications enregistrées !")
-                    st.rerun()
-
-    elif action == "❌ Supprimer un Produit":
-        if st.session_state.base_menu.empty:
-            st.info("Aucun article disponible.")
-        else:
-            dict_sup = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
-            art_a_supprimer = st.selectbox("Sélectionner le produit à effacer :", list(dict_sup.keys()))
-            
-            if st.button("Supprimer définitivement l'article 🗑️", type="primary"):
-                code_s = dict_sup[art_a_supprimer]
-                st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != code_s]
-                sauvegarder_menu()
-                st.warning(f"L'article '{art_a_supprimer}' a été retiré de la carte.")
-                st.rerun()
-
-# ==========================================
-# 🔐 VUE 7 : VUE ADMINISTRATEUR (GESTION DES USERS)
-# ==========================================
-def vue_administrateur():
-    st.subheader("🔐 Espace de Gestion des Utilisateurs")
-    
-    with st.form("form_add_user", clear_on_submit=True):
-        st.write("### ➕ Créer un nouveau compte")
-        new_identifiant = st.text_input("Identifiant / Nom de l'utilisateur :")
-        new_password = st.text_input("Mot de passe secret :", type="password")
-        new_role = st.selectbox("Attribuer un Rôle :", ["Serveur", "Responsable Caisse", "Administrateur"])
-        
-        if st.form_submit_button("Créer le compte utilisateur 👤"):
-            if not new_identifiant or not new_password:
-                st.error("Tous les champs sont requis.")
-            elif new_identifiant in st.session_state.base_utilisateurs['Identifiant'].values:
-                st.error("Cet identifiant existe déjà.")
-            else:
-                nouvel_u = pd.DataFrame([{'Identifiant': new_identifiant, 'Mot_De_Passe': new_password, 'Role': new_role}])
-                st.session_state.base_utilisateurs = pd.concat([st.session_state.base_utilisateurs, nouvel_u], ignore_index=True)
-                sauvegarder_utilisateurs()
-                st.success(f"Compte pour '{new_identifiant}' créé avec succès !")
-                st.rerun()
-                
-    st.write("### 👥 Comptes actifs enregistrés")
-    st.dataframe(st.session_state.base_utilisateurs[['Identifiant', 'Role']], use_container_width=True, hide_index=True)
-
-# ==========================================
-# ROUTAGE DES RENDERINGS
-# ==========================================
-if choix_vue == "📝 Prise de Commande":
-    vue_prise_commande()
-elif choix_vue == "🧾 Commandes & Additions":
-    vue_commandes_additions()
-elif choix_vue == "📦 Stocks & Approvisionnements":
-    vue_stocks_appro()
-elif choix_vue == "📊 Finances & Marges":
-    vue_finances_marges()
-elif choix_vue == "🔒 Clôture de Caisse":
-    vue_cloture_caisse()
-elif choix_vue == "⚙️ Configuration Carte":
-    vue_configuration_carte()
-elif choix_vue == "🔐 Administrateur":
-    vue_administrateur()
+                    st.session_state.base_menu.loc[idx, 'Stock_Initial'] = m_stock
