@@ -1,11 +1,21 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import os
+from datetime import datetime
+import streamlit.components.v1 as components
+
+# ==========================================
+# 0. FONCTION DE CALIBRAGE DU STOCK (NOUVEAU)
+# ==========================================
 def determiner_matiere_premiere(nom_article, prix_unitaire):
     """
-    Détermine la ligne exacte du stock à impacter en fonction de la viande
-    ou de la catégorie de prix pour les poissons.
+    Détermine le libellé exact de la matière première en stock à impacter
+    en fonction du nom de l'article ou de sa tranche de prix pour les poissons.
     """
-    nom_article_up = nom_article.upper()
+    nom_article_up = str(nom_article).upper()
     
-    # --- CAS DES POISSONS (3 matières premières distinctes selon le prix) ---
+    # --- CAS DES POISSONS ---
     if "POISSON" in nom_article_up:
         if prix_unitaire == 2000:
             return "PETIT POISSON"
@@ -14,7 +24,6 @@ def determiner_matiere_premiere(nom_article, prix_unitaire):
         elif prix_unitaire == 6000:
             return "GROS POISSON"
         else:
-            # Sécurité au cas où le prix change, on cherche un mot-clé dans le nom
             if "PETIT" in nom_article_up: return "PETIT POISSON"
             if "MOYEN" in nom_article_up: return "MOYEN POISSON"
             if "GROS" in nom_article_up: return "GROS POISSON"
@@ -29,12 +38,6 @@ def determiner_matiere_premiere(nom_article, prix_unitaire):
         return "PINTADE"
         
     return None
-import streamlit as st
-import pandas as pd
-import numpy as np
-import os
-from datetime import datetime
-import streamlit.components.v1 as components
 
 # ==========================================
 # 1. CONFIGURATION DE L'INTERFACE
@@ -209,7 +212,42 @@ def consolider_stocks_et_marges():
 df_global = consolider_stocks_et_marges()
 
 # ==========================================
-# VUE 1 : PRISE DE COMMANDE
+# 5. GESTION DE L'ECRAN DE CONNEXION
+# ==========================================
+if not st.session_state.authentifie:
+    st.title("🔑 Connexion Easygest Resto Pro+")
+    identifiant_input = st.text_input("Identifiant :")
+    mot_de_passe_input = st.text_input("Mot de passe :", type="password")
+    
+    if st.button("Se connecter 🚀", use_container_width=True):
+        utilisateurs = st.session_state.base_utilisateurs
+        match = utilisateurs[(utilisateurs['Identifiant'] == identifiant_input) & (utilisateurs['Mot_De_Passe'] == mot_de_passe_input)]
+        
+        if not match.empty:
+            st.session_state.authentifie = True
+            st.session_state.role_utilisateur = match.iloc[0]['Role']
+            st.session_state.nom_utilisateur = match.iloc[0]['Identifiant']
+            st.success("Connexion réussie !")
+            st.rerun()
+        else:
+            st.error("Identifiant ou mot de passe incorrect.")
+    st.stop()
+
+# ==========================================
+# 6. NAVIGATION PRINCIPALE (SIDEBAR)
+# ==========================================
+st.sidebar.title("🍳 Menu Easygest")
+options_disponibles = OPTIONS_PAR_ROLE.get(st.session_state.role_utilisateur, ["📝 Prise de Commande"])
+choix_vue = st.sidebar.radio("Navigation :", options_disponibles)
+
+if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
+    st.session_state.authentifie = False
+    st.session_state.role_utilisateur = None
+    st.session_state.nom_utilisateur = None
+    st.rerun()
+
+# ==========================================
+# VUE 1 : PRISE DE COMMANDE (CORRIGÉE AVEC CALIBRAGE)
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
@@ -238,19 +276,46 @@ def vue_prise_commande():
             if st.form_submit_button("Envoyer la commande 🚀"):
                 code_art = dict_menu[item_choisi]
                 item_details = df_global[df_global['Code_Article'] == code_art].iloc[0]
-                if quantite > item_details['Quantite_Dispo']:
-                    st.error("❌ Stock insuffisant !")
+                
+                # --- VÉRIFICATION & ROUTAGE SUR LA MATIÈRE PREMIÈRE CIBLE ---
+                nom_matiere_brute = determiner_matiere_premiere(item_details['Designation'], item_details['Prix_Vente_FCFA'])
+                
+                code_article_a_deduire = code_art
+                target_details = item_details
+                
+                if nom_matiere_brute:
+                    # On cherche la ligne correspondante dans st.session_state.base_menu
+                    match_brute = df_global[df_global['Designation'].str.upper() == nom_matiere_brute.upper()]
+                    if not match_brute.empty:
+                        code_article_a_deduire = match_brute.iloc[0]['Code_Article']
+                        target_details = match_brute.iloc[0]
+                    else:
+                        st.error(f"❌ Erreur : Vous devez d'abord créer l'article '{nom_matiere_brute}' dans votre carte pour assurer le déstockage !")
+                        st.stop()
+
+                # Vérification du stock sur l'élément à déduire (le plat ou la viande brute)
+                if quantite > target_details['Quantite_Dispo']:
+                    st.error(f"❌ Stock insuffisant ! (Disponible en {target_details['Designation']} : {target_details['Quantite_Dispo']} pcs)")
                 else:
                     total_net = (quantite * item_details['Prix_Vente_FCFA']) * (1 - (opt_remise / 100))
+                    
                     nouvelle_ligne = pd.DataFrame([{
-                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': table_choisie, 'Code_Article': code_art,
-                        'Type_Flux': 'Sortie', 'Quantite': quantite, 'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
-                        'Remise_Pourcent': opt_remise, 'Accompagnement': accomp_choisi, 'Total_FCFA': total_net,
-                        'Motif_Remise': motif_remise, 'Statut': 'En cours', 'Ref_Bon': '-'
+                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+                        'Table': table_choisie, 
+                        'Code_Article': code_article_a_deduire, # Déduction automatique sur l'ingrédient de base
+                        'Type_Flux': 'Sortie', 
+                        'Quantite': quantite, 
+                        'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
+                        'Remise_Pourcent': opt_remise, 
+                        'Accompagnement': accomp_choisi, 
+                        'Total_FCFA': total_net,
+                        'Motif_Remise': motif_remise, 
+                        'Statut': 'En cours', 
+                        'Ref_Bon': '-'
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
                     sauvegarder_ventes()
-                    st.success("Commande enregistrée !")
+                    st.success(f"Commande enregistrée ! Stock déduit sur la ligne : {target_details['Designation']}")
                     st.rerun()
     with col2:
         st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
@@ -575,7 +640,7 @@ def vue_cloture_caisse():
             components.html(js_print, height=0, width=0)
 
 # ==========================================
-# VUE 6 : CONFIGURATION DE LA CARTE (CORRIGÉE)
+# VUE 6 : CONFIGURATION DE LA CARTE
 # ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
@@ -584,252 +649,108 @@ def vue_configuration_carte():
     if action == "➕ Ajouter un Nouveau Produit":
         with st.form("form_ajout_produit", clear_on_submit=True):
             new_designation = st.text_input("Désignation du produit :")
-            new_categorie = st.selectbox("Famille d'article :", ["Cuisine", "Bar"])
-            c1, c2, c3 = st.columns(3)
-            new_stock_init = c1.number_input("Stock Initial :", min_value=0, value=0)
-            new_stock_min = c2.number_input("Stock Minimum :", min_value=1, value=5)
-            new_prix_vente = c3.number_input("Prix de Vente (FCFA) :", min_value=0, value=1000)
-            new_prix_achat = st.number_input("Prix d'Achat initial (FCFA) :", min_value=0, value=500)
+            new_cat = st.selectbox("Catégorie :", ["Cuisine", "Bar"])
+            new_stock_init = st.number_input("Stock Initial / Quantité de départ :", min_value=0, value=100)
+            new_stock_min = st.number_input("Stock d'Alerte Minimum :", min_value=0, value=5)
+            new_px_vente = st.number_input("Prix de Vente (FCFA) :", min_value=0, value=2000)
             
-            if st.form_submit_button("💾 Enregistrer le Produit"):
-                if new_designation:
-                    if len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']:
-                        st.session_state.base_menu = pd.DataFrame(columns=st.session_state.base_menu.columns)
-                    new_code = f"MENU{len(st.session_state.base_menu) + 1:03d}"
-                    nouvel_article = pd.DataFrame([{
-                        'Code_Article': new_code, 'Designation': new_designation, 'Categorie': new_categorie,
+            if st.form_submit_button("Ajouter le produit à la carte ✨"):
+                if not new_designation:
+                    st.error("Le nom du produit ne peut pas être vide.")
+                else:
+                    new_code = f"ART{datetime.now().strftime('%M%S')}{len(st.session_state.base_menu)+1}"
+                    nouvel_art = pd.DataFrame([{
+                        'Code_Article': new_code, 'Designation': new_designation, 'Categorie': new_cat,
                         'Stock_Initial': new_stock_init, 'Stock_Minimum': new_stock_min, 
-                        'Prix_Vente_FCFA': new_prix_vente, 'Prix_Achat_Moyen_FCFA': new_prix_achat
+                        'Prix_Vente_FCFA': new_px_vente, 'Prix_Achat_Moyen_FCFA': 0
                     }])
-                    st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvel_article], ignore_index=True)
+                    st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvel_art], ignore_index=True)
                     sauvegarder_menu()
-                    st.success("Article ajouté !")
-                    st.sidebar.empty()
+                    st.success(f"Article '{new_designation}' configuré avec succès !")
                     st.rerun()
 
     elif action == "✏️ Modifier un Produit Existant":
-        if not st.session_state.base_menu.empty:
-            dict_edit = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
-            prod = st.selectbox("Produit :", list(dict_edit.keys()))
-            code = dict_edit[prod]
-            infos = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code].iloc[0]
+        if st.session_state.base_menu.empty:
+            st.info("Aucun article disponible.")
+        else:
+            dict_modif = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
+            art_a_modifier = st.selectbox("Sélectionner le produit à modifier :", list(dict_modif.keys()))
+            code_m = dict_modif[art_a_modifier]
+            ligne_m = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_m].iloc[0]
             
-            with st.form("form_edit"):
-                edit_name = st.text_input("Nom :", value=infos['Designation'])
-                edit_px = st.number_input("Prix de Vente :", min_value=0, value=int(infos['Prix_Vente_FCFA']))
-                if st.form_submit_button("Sauvegarder Changes"):
-                    idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code].index
-                    st.session_state.base_menu.loc[idx, 'Designation'] = edit_name
-                    st.session_state.base_menu.loc[idx, 'Prix_Vente_FCFA'] = edit_px
+            with st.form("form_modif_produit"):
+                m_designation = st.text_input("Désignation :", value=ligne_m['Designation'])
+                m_cat = st.selectbox("Catégorie :", ["Cuisine", "Bar"], index=0 if ligne_m['Categorie'] == "Cuisine" else 1)
+                m_stock_init = st.number_input("Stock Initial :", min_value=0, value=int(ligne_m['Stock_Initial']))
+                m_stock_min = st.number_input("Stock Minimum :", min_value=0, value=int(ligne_m['Stock_Minimum']))
+                m_px_vente = st.number_input("Prix de Vente (FCFA) :", min_value=0, value=int(ligne_m['Prix_Vente_FCFA']))
+                
+                if st.form_submit_button("Enregistrer les modifications 💾"):
+                    idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_m].index
+                    st.session_state.base_menu.loc[idx, 'Designation'] = m_designation
+                    st.session_state.base_menu.loc[idx, 'Categorie'] = m_cat
+                    st.session_state.base_menu.loc[idx, 'Stock_Initial'] = m_stock_init
+                    st.session_state.base_menu.loc[idx, 'Stock_Minimum'] = m_stock_min
+                    st.session_state.base_menu.loc[idx, 'Prix_Vente_FCFA'] = m_px_vente
                     sauvegarder_menu()
-                    st.success("Produit modifié avec succès !")
+                    st.success("Modifications enregistrées !")
                     st.rerun()
 
     elif action == "❌ Supprimer un Produit":
-        if not st.session_state.base_menu.empty:
-            dict_del = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
-            prod_to_del = st.selectbox("Sélectionner le produit à effacer :", list(dict_del.keys()))
+        if st.session_state.base_menu.empty:
+            st.info("Aucun article disponible.")
+        else:
+            dict_sup = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
+            art_a_supprimer = st.selectbox("Sélectionner le produit à effacer :", list(dict_sup.keys()))
             
-            if st.button("Supprimer définitivement 🗑️", type="primary"):
-                code_del = dict_del[prod_to_del]
-                st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != code_del]
+            if st.button("Supprimer définitivement l'article 🗑️", type="primary"):
+                code_s = dict_sup[art_a_supprimer]
+                st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != code_s]
                 sauvegarder_menu()
-                st.success(f"'{prod_to_del}' a été retiré de la carte.")
+                st.warning(f"L'article '{art_a_supprimer}' a été retiré de la carte.")
                 st.rerun()
 
 # ==========================================
-# 🔐 VUE 7 : VUE ADMINISTRATEUR (RÉSOUT LA NAMEERROR)
+# 🔐 VUE 7 : VUE ADMINISTRATEUR (GESTION DES USERS)
 # ==========================================
 def vue_administrateur():
-    st.subheader("🔐 Administration : Rôles, Sécurité & Maintenance")
+    st.subheader("🔐 Espace de Gestion des Utilisateurs")
     
-    tab_list, tab_add, tab_edit, tab_del, tab_logs, tab_purge = st.tabs([
-        "📋 Liste des Utilisateurs", 
-        "➕ Ajouter un Utilisateur", 
-        "✏️ Modifier Droits/Mots de Passe",
-        "❌ Supprimer un Compte",
-        "📁 Consultation Numérique des Z",
-        "🚨 Purges & Maintenance"
-    ])
-    
-    # 1. Liste des comptes
-    with tab_list:
-        st.write("Comptes configurés sur cette machine :")
-        st.dataframe(
-            st.session_state.base_utilisateurs[['Identifiant', 'Role']], 
-            use_container_width=True, 
-            hide_index=True
-        )
+    with st.form("form_add_user", clear_on_submit=True):
+        st.write("### ➕ Créer un nouveau compte")
+        new_identifiant = st.text_input("Identifiant / Nom de l'utilisateur :")
+        new_password = st.text_input("Mot de passe secret :", type="password")
+        new_role = st.selectbox("Attribuer un Rôle :", ["Serveur", "Responsable Caisse", "Administrateur"])
         
-    # 2. Création de compte
-    with tab_add:
-        with st.form("form_creer_user", clear_on_submit=True):
-            new_id = st.text_input("Identifiant / Nom de l'employé :").strip()
-            new_pwd = st.text_input("Mot de passe :", type="password")
-            new_role = st.selectbox("Attribuer un Rôle :", ["Serveur", "Responsable Caisse", "Administrateur"])
-            
-            if st.form_submit_button("Créer le compte utilisateur 💾"):
-                if not new_id or not new_pwd:
-                    st.error("Champs obligatoires manquants.")
-                elif new_id in st.session_state.base_utilisateurs['Identifiant'].values:
-                    st.error("Cet identifiant existe déjà.")
-                else:
-                    nouvel_u = pd.DataFrame([{'Identifiant': new_id, 'Mot_De_Passe': new_pwd, 'Role': new_role}])
-                    st.session_state.base_utilisateurs = pd.concat([st.session_state.base_utilisateurs, nouvel_u], ignore_index=True)
-                    sauvegarder_utilisateurs()
-                    st.success(f"Compte pour **{new_id}** configuré avec succès !")
-                    st.rerun()
-                    
-    # 3. Modification (Rôle ou Mot de passe)
-    with tab_edit:
-        users_list = st.session_state.base_utilisateurs['Identifiant'].tolist()
-        selected_u = st.selectbox("Choisir l'utilisateur à modifier :", users_list)
-        info_u = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] == selected_u].iloc[0]
-        
-        with st.form("form_edit_user"):
-            edit_pwd = st.text_input("Nouveau mot de passe (Laisser identique si inchangé) :", value=info_u['Mot_De_Passe'], type="password")
-            edit_role = st.selectbox("Nouveau Rôle :", ["Serveur", "Responsable Caisse", "Administrateur"], index=["Serveur", "Responsable Caisse", "Administrateur"].index(info_u['Role']))
-            
-            if st.form_submit_button("Mettre à jour les accès 🔄"):
-                idx = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] == selected_u].index
-                st.session_state.base_utilisateurs.loc[idx, 'Mot_De_Passe'] = edit_pwd
-                st.session_state.base_utilisateurs.loc[idx, 'Role'] = edit_role
+        if st.form_submit_button("Créer le compte utilisateur 👤"):
+            if not new_identifiant or not new_password:
+                st.error("Tous les champs sont requis.")
+            elif new_identifiant in st.session_state.base_utilisateurs['Identifiant'].values:
+                st.error("Cet identifiant existe déjà.")
+            else:
+                nouvel_u = pd.DataFrame([{'Identifiant': new_identifiant, 'Mot_De_Passe': new_password, 'Role': new_role}])
+                st.session_state.base_utilisateurs = pd.concat([st.session_state.base_utilisateurs, nouvel_u], ignore_index=True)
                 sauvegarder_utilisateurs()
-                st.success("Modifications enregistrées.")
+                st.success(f"Compte pour '{new_identifiant}' créé avec succès !")
                 st.rerun()
                 
-    # 4. Suppression de compte
-    with tab_del:
-        users_to_del = st.session_state.base_utilisateurs['Identifiant'].tolist()
-        del_target = st.selectbox("Sélectionner le compte à supprimer :", users_to_del)
-        
-        if st.button("Confirmer la suppression définitive 🗑️", type="primary"):
-            target_role = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] == del_target].iloc[0]['Role']
-            nb_admins = len(st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Role'] == 'Administrateur'])
-            
-            if del_target == st.session_state.nom_utilisateur:
-                st.error("Vous ne pouvez pas supprimer votre propre compte en cours de session.")
-            elif target_role == "Administrateur" and nb_admins <= 1:
-                st.error("Action impossible. Le système requiert au moins un compte Administrateur actif.")
-            else:
-                st.session_state.base_utilisateurs = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] != del_target]
-                sauvegarder_utilisateurs()
-                st.success(f"Compte de {del_target} supprimé.")
-                st.rerun()
-
-    # 5. ANCIEN CODE INTÉGRÉ : Consultation Numérique des Z
-    with tab_logs:
-        st.write("Retrouvez ci-dessous l'intégralité des clôtures de caisse (Rapports Z) enregistrées numériquement.")
-        if st.session_state.historique_z.empty:
-            st.info("Aucun rapport Z n'a encore été archivé numériquement dans le système.")
-        else:
-            st.dataframe(st.session_state.historique_z.sort_index(ascending=False), use_container_width=True, hide_index=True)
-            st.markdown("---")
-            st.markdown("### 🔎 Inspecter & Réimprimer un Duplicata")
-            
-            liste_z = st.session_state.historique_z['Ref_Z'].tolist()[::-1]
-            z_choisi = st.selectbox("Sélectionnez la référence du rapport Z à analyser :", liste_z)
-            
-            infos_z = st.session_state.historique_z[st.session_state.historique_z['Ref_Z'] == z_choisi].iloc[0]
-            
-            ticket_reconstruit = f"""
-            <div style="border:1px solid #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:10px auto; font-size:13px; line-height:1.2;">
-                <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
-                <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">DUPLICATA TICKET Z</h4>
-                <p><b>REF TICKET :</b> {infos_z['Ref_Z']}</p>
-                <p><b>DATE CLÔTURE:</b> {infos_z['Date_Cloture']}</p>
-                <p><b>CAISSIER    :</b> {infos_z['Caissier']}</p>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <table style="width:100%; font-size:13px;">
-                    <tr><td>RECETTE COLLECTÉE:</td><td style="text-align:right; font-weight:bold;">{float(infos_z['Recette_Encaissee']):,.0f} F</td></tr>
-                    <tr><td>ARTICLES VENDUS  :</td><td style="text-align:right;">{infos_z['Articles_Vendus']} pcs</td></tr>
-                    <tr><td>TABLES FACTURÉES :</td><td style="text-align:right;">{infos_z['Tables_Servies']}</td></tr>
-                    <tr><td>FOND DE CAISSE   :</td><td style="text-align:right;">{float(infos_z['Fond_De_Caisse']):,.0f} F</td></tr>
-                </table>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <p><b>OBSERVATIONS :</b><br>{infos_z['Observations']}</p>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <h4 style="text-align:center; margin:5px 0 0 0; font-size:11px; color:#555;">DUPLICATA SÉCURISÉ ADMIN</h4>
-            </div>
-            """
-            
-            col_z_1, col_z_2 = st.columns([1, 2])
-            with col_z_1:
-                st.markdown(ticket_reconstruit, unsafe_allow_html=True)
-            with col_z_2:
-                st.info("💡 Ce panneau vous permet de réimprimer un ticket à tout moment si le rouleau thermique de la caisse a subi une coupure ou une panne lors de la fermeture.")
-                if st.button("🖨️ Lancer la réimpression de ce Duplicata Z", type="secondary", use_container_width=True):
-                    js_reprint = f"""
-                    <script>
-                        var w = window.open('', '_blank', 'height=600,width=400');
-                        w.document.write('<html><head><title>Duplicata Z</title></head><body>');
-                        w.document.write(`{ticket_reconstruit}`);
-                        w.document.write('</body></html>');
-                        w.document.close();
-                        setTimeout(function() {{ w.print(); w.close(); }}, 300);
-                    </script>
-                    """
-                    components.html(js_reprint, height=0, width=0)
-
-    # 6. ANCIEN CODE INTÉGRÉ : Purges & Maintenance
-    with tab_purge:
-        if st.checkbox("Activer l'option de réinitialisation générale du journal"):
-            if st.button("🚨 VIDER LE JOURNAL DES OPÉRATIONS", type="primary"):
-                st.session_state.historique_ventes = pd.DataFrame(columns=['Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'])
-                st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
-                st.rerun()
+    st.write("### 👥 Comptes actifs enregistrés")
+    st.dataframe(st.session_state.base_utilisateurs[['Identifiant', 'Role']], use_container_width=True, hide_index=True)
 
 # ==========================================
-# 8. SYSTÈME CENTRAL DE ROUTAGE & NAVIGATION
+# ROUTAGE DES RENDERINGS
 # ==========================================
-if not st.session_state.authentifie:
-    # Formulaire d'authentification épuré
-    st.markdown("<h2 style='text-align: center;'>EASYGEST RESTO PRO+</h2>", unsafe_allow_html=True)
-    col_login, _ = st.columns([1, 1])
-    with col_login:
-        with st.form("auth_form"):
-            st.markdown("### 🔐 Connexion à votre Session")
-            u_input = st.text_input("Identifiant :")
-            p_input = st.text_input("Mot de passe :", type="password")
-            
-            if st.form_submit_button("Entrer dans l'application ➡️"):
-                df_u = st.session_state.base_utilisateurs
-                match = df_u[(df_u['Identifiant'] == u_input) & (df_u['Mot_De_Passe'] == p_input)]
-                if not match.empty:
-                    st.session_state.authentifie = True
-                    st.session_state.nom_utilisateur = match.iloc[0]['Identifiant']
-                    st.session_state.role_utilisateur = match.iloc[0]['Role']
-                    st.success("Connexion réussie !")
-                    st.rerun()
-                else:
-                    st.error("Identifiants incorrects.")
-else:
-    # Barre latérale dynamique
-    st.sidebar.title("Menu principal")
-    st.sidebar.write("Navigation :")
-    
-    options_dispo = OPTIONS_PAR_ROLE.get(st.session_state.role_utilisateur, [" Prise de Commande"])
-    choix_vue = st.sidebar.radio("Aller à :", options_dispo)
-    
-    st.sidebar.markdown("---")
-    if st.sidebar.button("🚪 Déconnexion", type="secondary"):
-        st.session_state.authentifie = False
-        st.session_state.role_utilisateur = None
-        st.session_state.nom_utilisateur = None
-        st.rerun()
-
-    # Routage strict vers les fonctions d'affichage
-    if choix_vue == "📝 Prise de Commande":
-        vue_prise_commande()
-    elif choix_vue == "🧾 Commandes & Additions":
-        vue_commandes_additions()
-    elif choix_vue == "📦 Stocks & Approvisionnements":
-        vue_stocks_appro()
-    elif choix_vue == "📊 Finances & Marges":
-        vue_finances_marges()
-    elif choix_vue == "🔒 Clôture de Caisse":
-        vue_cloture_caisse()
-    elif choix_vue == "⚙️ Configuration Carte":
-        vue_configuration_carte()
-    elif choix_vue == "🔐 Administrateur":
-        vue_administrateur()
+if choix_vue == "📝 Prise de Commande":
+    vue_prise_commande()
+elif choix_vue == "🧾 Commandes & Additions":
+    vue_commandes_additions()
+elif choix_vue == "📦 Stocks & Approvisionnements":
+    vue_stocks_appro()
+elif choix_vue == "📊 Finances & Marges":
+    vue_finances_marges()
+elif choix_vue == "🔒 Clôture de Caisse":
+    vue_cloture_caisse()
+elif choix_vue == "⚙️ Configuration Carte":
+    vue_configuration_carte()
+elif choix_vue == "🔐 Administrateur":
+    vue_administrateur()
