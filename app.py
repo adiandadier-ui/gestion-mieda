@@ -101,7 +101,7 @@ def initialiser_fichiers_csv():
 
     if not os.path.exists(CSV_VENTES):
         df_init_ventes = pd.DataFrame(columns=[
-            'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
+            'Heure', 'Table', 'Code_Article', 'Code_Matiere_Stock', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
             'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
         ])
         df_init_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
@@ -134,6 +134,9 @@ if 'base_menu' not in st.session_state:
 
 if 'historique_ventes' not in st.session_state:
     st.session_state.historique_ventes = pd.read_csv(CSV_VENTES)
+    # Rétrocompatibilité si la colonne de stock brute est manquante
+    if 'Code_Matiere_Stock' not in st.session_state.historique_ventes.columns:
+        st.session_state.historique_ventes['Code_Matiere_Stock'] = st.session_state.historique_ventes['Code_Article']
 
 if 'historique_z' not in st.session_state:
     st.session_state.historique_z = pd.read_csv(CSV_Z_HISTORIQUE)
@@ -152,29 +155,8 @@ if 'historique_bons' not in st.session_state:
         }
 
 # ==========================================
-# 3. GESTION DE L'AUTHENTIFICATION
+# 3. GESTION DES SAUVEGARDES ET STOCKS
 # ==========================================
-if 'authentifie' not in st.session_state:
-    st.session_state.authentifie = False
-if 'role_utilisateur' not in st.session_state:
-    st.session_state.role_utilisateur = None
-if 'nom_utilisateur' not in st.session_state:
-    st.session_state.nom_utilisateur = None
-
-OPTIONS_PAR_ROLE = {
-    "Serveur": ["📝 Prise de Commande"],
-    "Responsable Caisse": ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements"],
-    "Administrateur": [
-        "📝 Prise de Commande", 
-        "🧾 Commandes & Additions", 
-        "📦 Stocks & Approvisionnements", 
-        "📊 Finances & Marges", 
-        "🔒 Clôture de Caisse", 
-        "⚙️ Configuration Carte", 
-        "🔐 Administrateur"
-    ]
-}
-
 def sauvegarder_utilisateurs():
     st.session_state.base_utilisateurs.to_csv(CSV_UTILISATEURS, index=False, encoding='utf-8-sig')
 
@@ -197,12 +179,18 @@ def sauvegarder_z_historique():
 def consolider_stocks_et_marges():
     df_art = st.session_state.base_menu.copy()
     df_vnt = st.session_state.historique_ventes.copy()
+    
     if not df_vnt.empty:
-        df_sorties = df_vnt[(df_vnt['Type_Flux'] == 'Sortie') & (df_vnt['Statut'] != 'Annulé')].groupby('Code_Article')['Quantite'].sum().reset_index(name='Total_Sorties')
-        df_entrees = df_vnt[df_vnt['Type_Flux'] == 'Réappro'].groupby('Code_Article')['Quantite'].sum().reset_index(name='Total_Entrees')
+        # Crucial : C'est la colonne Code_Matiere_Stock qui subit les mouvements de stock réels
+        df_sorties = df_vnt[(df_vnt['Type_Flux'] == 'Sortie') & (df_vnt['Statut'] != 'Annulé')].groupby('Code_Matiere_Stock')['Quantite'].sum().reset_index(name='Total_Sorties')
+        df_sorties.rename(columns={'Code_Matiere_Stock': 'Code_Article'}, inplace=True)
+        
+        df_entrees = df_vnt[df_vnt['Type_Flux'] == 'Réappro'].groupby('Code_Matiere_Stock')['Quantite'].sum().reset_index(name='Total_Entrees')
+        df_entrees.rename(columns={'Code_Matiere_Stock': 'Code_Article'}, inplace=True)
     else:
         df_sorties = pd.DataFrame(columns=['Code_Article', 'Total_Sorties'])
         df_entrees = pd.DataFrame(columns=['Code_Article', 'Total_Entrees'])
+        
     df_res = df_art.merge(df_sorties, on='Code_Article', how='left').merge(df_entrees, on='Code_Article', how='left')
     df_res['Total_Sorties'] = df_res['Total_Sorties'].fillna(0)
     df_res['Total_Entrees'] = df_res['Total_Entrees'].fillna(0)
@@ -210,6 +198,30 @@ def consolider_stocks_et_marges():
     return df_res
 
 df_global = consolider_stocks_et_marges()
+
+# ==========================================
+# 4. GESTION DE L'AUTHENTIFICATION
+# ==========================================
+if 'authentifie' not in st.session_state:
+    st.session_state.authentifie = False
+if 'role_utilisateur' not in st.session_state:
+    st.session_state.role_utilisateur = None
+if 'nom_utilisateur' not in st.session_state:
+    st.session_state.nom_utilisateur = None
+
+OPTIONS_PAR_ROLE = {
+    "Serveur": ["📝 Prise de Commande"],
+    "Responsable Caisse": ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements"],
+    "Administrateur": [
+        "📝 Prise de Commande", 
+        "🧾 Commandes & Additions", 
+        "📦 Stocks & Approvisionnements", 
+        "📊 Finances & Marges", 
+        "🔒 Clôture de Caisse", 
+        "⚙️ Configuration Carte", 
+        "🔐 Administrateur"
+    ]
+}
 
 if not st.session_state.authentifie:
     st.title("🔑 Connexion Easygest Resto Pro+")
@@ -231,7 +243,7 @@ if not st.session_state.authentifie:
     st.stop()
 
 # ==========================================
-# 6. NAVIGATION PRINCIPALE (SIDEBAR)
+# 5. NAVIGATION PRINCIPALE (SIDEBAR)
 # ==========================================
 st.sidebar.title("🍳 Menu Easygest")
 options_disponibles = OPTIONS_PAR_ROLE.get(st.session_state.role_utilisateur, ["📝 Prise de Commande"])
@@ -244,7 +256,7 @@ if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
     st.rerun()
 
 # ==========================================
-# VUE 1 : PRISE DE COMMANDE (FILTRAGE DES INGRÉDIENTS)
+# VUE 1 : PRISE DE COMMANDE (STOCK ROUTÉ / PRODUIT FINI CONSERVÉ)
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
@@ -258,7 +270,7 @@ def vue_prise_commande():
         for _, r in st.session_state.base_menu.iterrows():
             designation_upper = str(r['Designation']).upper().strip()
             
-            # FILTRAGE EXCLUSIF : On masque les matières premières brutes de la liste déroulante
+            # FILTRAGE : On masque totalement les matières premières de la vue serveur
             if designation_upper in MATIERES_PREMIERES_CIBLES:
                 continue
                 
@@ -282,13 +294,13 @@ def vue_prise_commande():
             motif_remise = "Aucun" if opt_remise == 0 else "Geste Commercial"
             
             if st.form_submit_button("Envoyer la commande 🚀"):
-                code_art = dict_menu[item_choisi]
-                item_details = df_global[df_global['Code_Article'] == code_art].iloc[0]
+                code_art_fini = dict_menu[item_choisi]
+                item_details = df_global[df_global['Code_Article'] == code_art_fini].iloc[0]
                 
-                # --- VÉRIFICATION & ROUTAGE SUR LA MATIÈRE PREMIÈRE CIBLE ---
+                # ÉTAPE CLÉ : On trouve quelle matière brute décompter
                 nom_matiere_brute = determiner_matiere_premiere(item_details['Designation'], item_details['Prix_Vente_FCFA'])
                 
-                code_article_a_deduire = code_art
+                code_article_a_deduire = code_art_fini
                 target_details = item_details
                 
                 if nom_matiere_brute:
@@ -297,7 +309,7 @@ def vue_prise_commande():
                         code_article_a_deduire = match_brute.iloc[0]['Code_Article']
                         target_details = match_brute.iloc[0]
                     else:
-                        st.error(f"❌ Erreur : L'ingrédient de base '{nom_matiere_brute}' n'existe pas en stock. Créez-le d'abord.")
+                        st.error(f"❌ Erreur : L'ingrédient de base '{nom_matiere_brute}' n'existe pas en stock.")
                         st.stop()
 
                 if quantite > target_details['Quantite_Dispo']:
@@ -305,10 +317,12 @@ def vue_prise_commande():
                 else:
                     total_net = (quantite * item_details['Prix_Vente_FCFA']) * (1 - (opt_remise / 100))
                     
+                    # RUPTURE SÉMANTIQUE : Code_Article = Produit Fini (Affichage), Code_Matiere_Stock = Matière brute (Stock)
                     nouvelle_ligne = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
                         'Table': table_choisie, 
-                        'Code_Article': code_article_a_deduire, 
+                        'Code_Article': code_art_fini, # Garde le produit fini (Ex: POISSON BRAISÉ)
+                        'Code_Matiere_Stock': code_article_a_deduire, # Stock décompté (Ex: PETIT POISSON)
                         'Type_Flux': 'Sortie', 
                         'Quantite': quantite, 
                         'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
@@ -321,13 +335,13 @@ def vue_prise_commande():
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
                     sauvegarder_ventes()
-                    st.success(f"Commande envoyée ! Ingrédient décompté : {target_details['Designation']}")
+                    st.success(f"Commande envoyée ! Plat enregistré : {item_details['Designation']}")
                     st.rerun()
     with col2:
         st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
 
 # ==========================================
-# LES AUTRES VUES
+# VUE 2 : COMMANDES & ADDITIONS (PRODUIT FINI RECONNU)
 # ==========================================
 def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
@@ -335,6 +349,7 @@ def vue_commandes_additions():
         st.info("Aucune commande dans le système.")
         return
 
+    # Jointure basée sur 'Code_Article' pour afficher le vrai produit fini vendu
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
     tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général des Opérations"])
@@ -348,9 +363,10 @@ def vue_commandes_additions():
             df_table_strict = df_actives[df_actives['Table'] == table_selectionnee].copy()
             
             def formater_libelle(row):
-                if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans accompagnement":
-                    return f"{row['Designation']} (+ {row['Accompagnement']})"
-                return row['Designation']
+                designation = row['Designation'] if pd.notna(row['Designation']) else "Produit Inconnu"
+                if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans" and pd.notna(row['Accompagnement']):
+                    return f"{designation} (+ {row['Accompagnement']})"
+                return designation
                 
             df_table_strict['Désignation Produit'] = df_table_strict.apply(formater_libelle, axis=1)
             st.dataframe(df_table_strict[['Heure', 'Categorie', 'Désignation Produit', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Total_FCFA']], use_container_width=True, hide_index=True)
@@ -375,6 +391,9 @@ def vue_commandes_additions():
     with tabs_caisse[1]:
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
+# ==========================================
+# VUE 3 : GESTION DES STOCKS
+# ==========================================
 def vue_stocks_appro():
     st.subheader("📦 Gestion des Stocks & Bons d'Entrée")
     tab_cuisine, tab_bar, tab_bons = st.tabs(["🍳 Stock CUISINE", "🍹 Stock BAR", "📄 Bons d'Entrée Valorisés"])
@@ -400,7 +419,7 @@ def vue_stocks_appro():
                         
                         ligne_appro = pd.DataFrame([{
                             'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 'Code_Article': code_r,
-                            'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
+                            'Code_Matiere_Stock': code_r, 'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
                             'Remise_Pourcent': 0, 'Accompagnement': '-', 
                             'Total_FCFA': qte_recue * px_achat_unit, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
                         }])
@@ -439,7 +458,7 @@ def vue_stocks_appro():
                         
                         ligne_appro = pd.DataFrame([{
                             'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_BAR', 'Code_Article': code_r,
-                            'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
+                            'Code_Matiere_Stock': code_r, 'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
                             'Remise_Pourcent': 0, 'Accompagnement': '-', 
                             'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
                         }])
@@ -492,6 +511,9 @@ def vue_stocks_appro():
                 """
                 components.html(js_script, height=0, width=0)
 
+# ==========================================
+# AUTRES VUES (FINANCES, CLÔTURE, CARTE, ADMIN)
+# ==========================================
 def vue_finances_marges():
     st.subheader("📊 Compte d'Exploitation & Rentabilité Réelle")
     df_ventes_payees = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
@@ -501,7 +523,7 @@ def vue_finances_marges():
         
     df_calc_marge = df_ventes_payees.groupby('Code_Article').agg({'Quantite': 'sum', 'Total_FCFA': 'sum'}).reset_index()
     df_calc_marge = df_calc_marge.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Prix_Achat_Moyen_FCFA']], on='Code_Article', how='left')
-    df_calc_marge['Cout_Total_Achat'] = df_calc_marge['Quantite'] * df_calc_marge['Prix_Achat_Moyen_FCFA']
+    df_calc_marge['Cout_Total_Achat'] = df_calc_marge['Quantite'] * df_calc_marge['Prix_Achat_Moyen_FCFA'].fillna(0)
     df_calc_marge['Marge_Brute_FCFA'] = df_calc_marge['Total_FCFA'] - df_calc_marge['Cout_Total_Achat']
     
     ca_total = df_calc_marge['Total_FCFA'].sum()
@@ -639,7 +661,7 @@ def vue_configuration_carte():
                 m_designation = st.text_input("Désignation :", value=ligne_m['Designation'])
                 m_cat = st.selectbox("Catégorie :", ["Cuisine", "Bar"], index=0 if ligne_m['Categorie'] == "Cuisine" else 1)
                 m_stock_init = st.number_input("Stock Initial :", min_value=0, value=int(ligne_m['Stock_Initial']))
-                m_stock_min = st.number_input("Stock Minimum :", min_value=0, value=int(ligne_m['Stock_Minimum']))
+                m_stock_min = m_stock_min = st.number_input("Stock Minimum :", min_value=0, value=int(ligne_m['Stock_Minimum']))
                 m_px_vente = st.number_input("Prix de Vente (FCFA) :", min_value=0, value=int(ligne_m['Prix_Vente_FCFA']))
                 
                 if st.form_submit_button("Enregistrer les modifications 💾"):
