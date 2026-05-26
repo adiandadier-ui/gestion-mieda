@@ -268,7 +268,6 @@ def vue_prise_commande():
         for _, r in st.session_state.base_menu.iterrows():
             designation_upper = str(r['Designation']).upper().strip()
             
-            # FILTRAGE : On masque les matières premières de la vue serveur
             if designation_upper in MATIERES_PREMIERES_CIBLES:
                 continue
                 
@@ -387,14 +386,13 @@ def vue_commandes_additions():
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
 # ==========================================
-# VUE 3 : STOCKS & APPROS (FILTRAGE STRICT DES MATIÈRES PREMIÈRES)
+# VUE 3 : STOCKS & APPROS
 # ==========================================
 def vue_stocks_appro():
     st.subheader("📦 Gestion des Stocks & Bons d'Entrée")
     tab_cuisine, tab_bar, tab_bons = st.tabs(["🍳 Stock CUISINE (Ingrédients)", "🍹 Stock BAR (Boissons)", "📄 Bons d'Entrée Valorisés"])
     
     with tab_cuisine:
-        # CORRECTION FILTRE : On ne garde que les lignes de la Cuisine dont le nom est une Matière Première brute
         df_cuisine_brut = df_global[df_global['Categorie'] == 'Cuisine'].copy()
         df_cuisine = df_cuisine_brut[df_cuisine_brut['Designation'].str.upper().str.strip().isin(MATIERES_PREMIERES_CIBLES)]
         
@@ -405,7 +403,7 @@ def vue_stocks_appro():
         
         with st.expander("📥 Enregistrer un Achat / Approvisionnement Cuisine"):
             if df_cuisine.empty:
-                st.info("Configurez d'abord vos matières premières (PETIT POISSON, POULET...) dans l'onglet Configuration Carte.")
+                st.info("Configurez d'abord vos matières premières dans l'onglet Configuration Carte.")
             else:
                 with st.form("form_appro_cuisine", clear_on_submit=True):
                     dict_cuisine = {r['Designation']: r['Code_Article'] for _, r in df_cuisine.iterrows()}
@@ -444,4 +442,24 @@ def vue_stocks_appro():
         
         with st.expander("📥 Enregistrer un Achat / Approvisionnement Bar"):
             if df_bar.empty:
-                st.info("
+                st.info("Aucun article Bar configuré.")
+            else:
+                with st.form("form_appro_bar", clear_on_submit=True):
+                    dict_bar = {r['Designation']: r['Code_Article'] for _, r in df_bar.iterrows()}
+                    art_choisi_bar = st.selectbox("Boisson reçue :", list(dict_bar.keys()))
+                    qte_recue_bar = st.number_input("Quantité achetée :", min_value=1, value=24)
+                    px_achat_unit_bar = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=500)
+                    fournisseur_bar = st.text_input("Nom du Fournisseur :", value="SOLIBRA")
+                    
+                    if st.form_submit_button("Générer le Bon d'Entrée Bar 📑"):
+                        code_r = dict_bar[art_choisi_bar]
+                        ref_bon = f"BON-BAR-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                        
+                        ligne_appro = pd.DataFrame([{
+                            'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_BAR', 'Code_Article': code_r,
+                            'Code_Matiere_Stock': code_r, 'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
+                            'Remise_Pourcent': 0, 'Accompagnement': '-', 
+                            'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
+                        }])
+                        st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
+                        idx = st.session_state.
