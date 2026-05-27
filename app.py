@@ -321,44 +321,6 @@ def vue_commandes_additions():
     with tabs_caisse[1]:
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
-def vue_stocks_appro():
-    st.subheader("📦 Gestion des Stocks & Approvisionnements")
-    df_global = consolider_stocks_et_marges()
-    
-    tab_c, tab_b = st.tabs(["🍳 Cuisine", "🍹 Bar"])
-    with tab_c:
-        df_c = df_global[(df_global['Categorie'] == 'Cuisine') & (df_global['Designation'].str.upper().str.strip().isin(MATIERES_PREMIERES_CIBLES))]
-        st.dataframe(df_c[['Code_Article', 'Designation', 'Quantite_Dispo', 'Stock_Minimum']], use_container_width=True, hide_index=True)
-        
-        with st.expander("📥 Ajouter du Stock Cuisine"):
-            with st.form("form_appro_c", clear_on_submit=True):
-                art_choisi = st.selectbox("Sélectionner l'ingrédient :", list(df_c['Designation'].unique()))
-                qte = st.number_input("Quantité reçue :", min_value=1, value=10)
-                px = st.number_input("Prix d'achat unitaire :", min_value=0, value=1000)
-                if st.form_submit_button("Valider l'entrée"):
-                    code = df_c[df_c['Designation'] == art_choisi].iloc[0]['Code_Article']
-                    ligne = pd.DataFrame([{
-                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                        'Table': 'APPRO_CUISINE', 
-                        'Code_Article': code, 
-                        'Code_Matiere_Stock': code, 
-                        'Type_Flux': 'Réappro', 
-                        'Quantite': qte, 
-                        'Prix_Unitaire_Flux': px, 
-                        'Remise_Pourcent': 0, 
-                        'Accompagnement': '-', 
-                        'Total_FCFA': qte*px, 
-                        'Motif_Remise': 'Aucun', 
-                        'Statut': 'Stocké', 
-                        'Ref_Bon': '-'
-                    }])
-                    st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne], ignore_index=True)
-                    sauvegarder_ventes()
-                    st.success("Stock mis à jour avec succès !")
-                    st.rerun()
-    with tab_b:
-        df_b = df_global[df_global['Categorie'] == 'Bar']
-        st.dataframe(df_b[['Code_Article', 'Designation', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Vente_FCFA']], use_container_width=True, hide_index=True)
 
 def vue_finances_marges():
     st.subheader("📊 Rentabilité & Chiffre d'Affaires")
