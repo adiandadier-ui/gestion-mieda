@@ -275,34 +275,50 @@ def vue_prise_commande():
 def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
     if st.session_state.historique_ventes.empty:
-        st.info("Aucune commande enregistrée.")
+        st.info("Aucune commande dans le système.")
         return
+
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
+    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général des Opérations"])
     
-    t1, t2 = st.tabs(["🪑 Tables Actives", "📋 Historique"])
-    with t1:
+    with tabs_caisse[0]:
         if df_actives.empty:
-            st.success("Toutes les tables sont réglées. ✨")
+            st.success("Toutes les tables sont actuellement réglées. ✨")
         else:
-            table_sel = st.selectbox("Choisir la table :", sorted(df_actives['Table'].unique()))
-            df_table = df_actives[df_actives['Table'] == table_sel]
-            st.dataframe(df_table[['Heure', 'Designation', 'Quantite', 'Total_FCFA']], use_container_width=True, hide_index=True)
-            total = df_table['Total_FCFA'].sum()
-            st.markdown(f"## **Total Net à Payer : {total:,.0f} FCFA**")
+            tables_occupees = sorted(df_actives['Table'].unique())
+            table_selectionnee = st.selectbox("Sélectionner la table à encaisser :", tables_occupees)
+            df_table_strict = df_actives[df_actives['Table'] == table_selectionnee].copy()
             
-            c1, c2 = st.columns(2)
-            if c1.button(f"Encaisser la {table_sel} 💰", type="primary"):
-                idx = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_sel) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
-                st.session_state.historique_ventes.loc[idx, 'Statut'] = 'Payé'
+            def formater_libelle(row):
+                designation = row['Designation'] if pd.notna(row['Designation']) else "Produit Inconnu"
+                if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans" and pd.notna(row['Accompagnement']):
+                    return f"{designation} (+ {row['Accompagnement']})"
+                return designation
+                
+            # CORRECTION ICI : Parenthèse fermée proprement pour corriger l'erreur de l'image
+            df_table_strict['Désignation Produit'] = df_table_strict.apply(formater_libelle, axis=1)
+            
+            st.dataframe(df_table_strict[['Heure', 'Categorie', 'Désignation Produit', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Total_FCFA']], use_container_width=True, hide_index=True)
+            total_addition = df_table_strict['Total_FCFA'].sum()
+            st.markdown(f"## **Total Net à Payer : {total_addition:,.0f} FCFA**")
+            
+            col_btn1, col_btn2 = st.columns(2)
+            if col_btn1.button(f"Encaisser la {table_selectionnee} 💰", type="primary"):
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
+                st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
                 sauvegarder_ventes()
+                st.success(f"La {table_selectionnee} a été réglée !")
                 st.rerun()
-            if c2.button(f"Annuler la {table_sel} ❌"):
-                idx = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_sel) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
-                st.session_state.historique_ventes.loc[idx, 'Statut'] = 'Annulé'
+                
+            if col_btn2.button(f"Annuler la {table_selectionnee} ❌"):
+                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
+                st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
                 sauvegarder_ventes()
+                st.warning(f"Commandes annulées.")
                 st.rerun()
-    with t2:
+
+    with tabs_caisse[1]:
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
 def vue_stocks_appro():
