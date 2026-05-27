@@ -14,7 +14,8 @@ MATIERES_PREMIERES_CIBLES = [
     "GROS POISSON", 
     "POULET", 
     "LAPIN", 
-    "PINTADE"
+    "PINTADE",
+    "PORTION SAUCE"  # <-- Nouvelle matière première ajoutée
 ]
 
 def determiner_matiere_premiere(nom_article, prix_unitaire):
@@ -24,6 +25,13 @@ def determiner_matiere_premiere(nom_article, prix_unitaire):
     """
     nom_article_up = str(nom_article).upper().strip()
     
+    # --- CAS DES PLATS ACCOMPAGNÉS DE SAUCE (1 Portion = 15 Plats) ---
+    if "SAUCE" in nom_article_up:
+        # 1 plat vendu consomme 1/15ème d'une portion globale de sauce
+        coef_sauce = 1.0 / 15.0
+        return "PORTION SAUCE", coef_sauce
+
+    # --- CAS DES POISSONS (Par défaut coefficient 1) ---
     if "POISSON" in nom_article_up:
         coef = 1.0
         if prix_unitaire == 2000: return "PETIT POISSON", coef
@@ -35,6 +43,7 @@ def determiner_matiere_premiere(nom_article, prix_unitaire):
             if "GROS" in nom_article_up: return "GROS POISSON", coef
             return None, 0.0
             
+    # --- CAS DES VIANDES FRACTIONNÉES ---
     base_viande = None
     if "POULET" in nom_article_up: base_viande = "POULET"
     elif "LAPIN" in nom_article_up: base_viande = "LAPIN"
@@ -280,7 +289,6 @@ def vue_stocks_appro():
                 px = st.number_input("Prix d'achat unitaire :", min_value=0, value=1000)
                 if st.form_submit_button("Valider l'entrée"):
                     code = df_c[df_c['Designation'] == art_choisi].iloc[0]['Code_Article']
-                    # Correction stricte ici pour éviter l'erreur de chaînage
                     ligne = pd.DataFrame([{
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
                         'Table': 'APPRO_CUISINE', 
@@ -306,9 +314,43 @@ def vue_stocks_appro():
 
 def vue_finances_marges():
     st.subheader("📊 Rentabilité & Chiffre d'Affaires")
-    df_payes = st.session_state.historique_ventes
-    # ==========================================
-# AIGUILLAGE DES VUES (LOGIQUE DE ROUTAGE)
+    df_payes = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
+    if df_payes.empty:
+        st.info("Aucune donnée financière pour le moment.")
+        return
+    ca = df_payes['Total_FCFA'].sum()
+    st.metric("Chiffre d'Affaires Global Encaissé", f"{ca:,.0f} FCFA")
+
+def vue_cloture_caisse():
+    st.subheader("🔒 Clôture de Caisse")
+    df_v = st.session_state.historique_ventes
+    df_jour = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'Payé')]
+    ca_attendu = df_jour['Total_FCFA'].sum() if not df_jour.empty else 0
+    st.metric("Recette Attendue Système", f"{ca_attendu:,.0f} FCFA")
+
+def vue_configuration_carte():
+    st.subheader("⚙️ Configuration de la Carte des Produits")
+    with st.form("add_art", clear_on_submit=True):
+        code = st.text_input("Code unique :")
+        des = st.text_input("Nom de l'article :")
+        cat = st.selectbox("Catégorie :", ["Cuisine", "Bar"])
+        px = st.number_input("Prix de vente (FCFA) :", min_value=0, step=500)
+        if st.form_submit_button("Enregistrer l'article"):
+            if code and des:
+                new_row = pd.DataFrame([{'Code_Article': code, 'Designation': des, 'Categorie': cat, 'Stock_Initial': 0, 'Stock_Minimum': 5, 'Prix_Vente_FCFA': px, 'Prix_Achat_Moyen_FCFA': 0}])
+                st.session_state.base_menu = pd.concat([st.session_state.base_menu, new_row], ignore_index=True)
+                sauvegarder_menu()
+                st.success("Article ajouté !")
+                st.rerun()
+    st.dataframe(st.session_state.base_menu, use_container_width=True, hide_index=True)
+
+def vue_administrateur():
+    st.subheader("🔐 Espace d'Administration Général")
+    st.write("### Liste des Utilisateurs")
+    st.dataframe(st.session_state.base_utilisateurs, use_container_width=True, hide_index=True)
+
+# ==========================================
+# AIGUILLAGE DE LA NAVIGATION (ROUTEUR)
 # ==========================================
 if choix_vue == "📝 Prise de Commande":
     vue_prise_commande()
