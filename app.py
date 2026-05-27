@@ -274,44 +274,126 @@ def vue_commandes_additions():
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
 def vue_stocks_appro():
-    st.subheader("📦 Gestion des Stocks & Approvisionnements")
-    df_global = consolider_stocks_et_marges()
+    st.subheader("📦 Gestion des Stocks & Bons d'Entrée")
+    tab_cuisine, tab_bar, tab_bons = st.tabs(["🍳 Stock CUISINE (Ingrédients)", "🍹 Stock BAR (Boissons)", "📄 Bons d'Entrée Valorisés"])
     
-    tab_c, tab_b = st.tabs(["🍳 Cuisine", "🍹 Bar"])
-    with tab_c:
-        df_c = df_global[(df_global['Categorie'] == 'Cuisine') & (df_global['Designation'].str.upper().str.strip().isin(MATIERES_PREMIERES_CIBLES))]
-        st.dataframe(df_c[['Code_Article', 'Designation', 'Quantite_Dispo', 'Stock_Minimum']], use_container_width=True, hide_index=True)
+    with tab_cuisine:
+        df_cuisine_brut = df_global[df_global['Categorie'] == 'Cuisine'].copy()
+        df_cuisine = df_cuisine_brut[df_cuisine_brut['Designation'].str.upper().str.strip().isin(MATIERES_PREMIERES_CIBLES)]
         
-        with st.expander("📥 Ajouter du Stock Cuisine"):
-            with st.form("form_appro_c", clear_on_submit=True):
-                art_choisi = st.selectbox("Sélectionner l'ingrédient :", list(df_c['Designation'].unique()))
-                qte = st.number_input("Quantité reçue :", min_value=1, value=10)
-                px = st.number_input("Prix d'achat unitaire :", min_value=0, value=1000)
-                if st.form_submit_button("Valider l'entrée"):
-                    code = df_c[df_c['Designation'] == art_choisi].iloc[0]['Code_Article']
-                    ligne = pd.DataFrame([{
-                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                        'Table': 'APPRO_CUISINE', 
-                        'Code_Article': code, 
-                        'Code_Matiere_Stock': code, 
-                        'Type_Flux': 'Réappro', 
-                        'Quantite': qte, 
-                        'Prix_Unitaire_Flux': px, 
-                        'Remise_Pourcent': 0, 
-                        'Accompagnement': '-', 
-                        'Total_FCFA': qte*px, 
-                        'Motif_Remise': 'Aucun', 
-                        'Statut': 'Stocké', 
-                        'Ref_Bon': '-'
-                    }])
-                    st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne], ignore_index=True)
-                    sauvegarder_ventes()
-                    st.success("Stock mis à jour avec succès !")
-                    st.rerun()
-    with tab_b:
-        df_b = df_global[df_global['Categorie'] == 'Bar']
-        st.dataframe(df_b[['Code_Article', 'Designation', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Vente_FCFA']], use_container_width=True, hide_index=True)
+        if df_cuisine.empty:
+            st.info("Aucune matière première brute n'est détectée dans votre base de données cuisine.")
+        else:
+            st.dataframe(df_cuisine[['Code_Article', 'Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum']], use_container_width=True, hide_index=True)
+        
+        with st.expander("📥 Enregistrer un Achat / Approvisionnement Cuisine"):
+            if df_cuisine.empty:
+                st.info("Configurez d'abord vos matières premières dans l'onglet Configuration Carte.")
+            else:
+                with st.form("form_appro_cuisine", clear_on_submit=True):
+                    dict_cuisine = {r['Designation']: r['Code_Article'] for _, r in df_cuisine.iterrows()}
+                    art_choisi = st.selectbox("Ingrédient Cuisine reçu :", list(dict_cuisine.keys()))
+                    qte_recue = st.number_input("Quantité achetée :", min_value=1, value=10)
+                    px_achat_unit = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=1000)
+                    fournisseur = st.text_input("Nom du Fournisseur :", value="Grossiste Marché")
+                    
+                    if st.form_submit_button("Générer le Bon d'Entrée Cuisine 📑"):
+                        code_r = dict_cuisine[art_choisi]
+                        ref_bon = f"BON-CUI-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                        
+                        ligne_appro = pd.DataFrame([{
+                            'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 'Code_Article': code_r,
+                            'Code_Matiere_Stock': code_r, 'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
+                            'Remise_Pourcent': 0, 'Accompagnement': '-', 
+                            'Total_FCFA': qte_recue * px_achat_unit, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
+                        }])
+                        st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
+                        idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
+                        st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit
+                        
+                        st.session_state.historique_bons[ref_bon] = {
+                            'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'CUISINE', 'Article': art_choisi,
+                            'Quantite': qte_recue, 'Prix_Unitaire': px_achat_unit, 'Total': qte_recue * px_achat_unit, 'Fournisseur': fournisseur
+                        }
+                        sauvegarder_ventes()
+                        sauvegarder_menu()
+                        sauvegarder_bons()
+                        st.success(f"Bon {ref_bon} enregistré !")
+                        st.rerun()
 
+    with tab_bar:
+        df_bar = df_global[df_global['Categorie'] == 'Bar']
+        st.dataframe(df_bar[['Code_Article', 'Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Vente_FCFA']], use_container_width=True, hide_index=True)
+        
+        with st.expander("📥 Enregistrer un Achat / Approvisionnement Bar"):
+            if df_bar.empty:
+                st.info("Aucun article Bar configuré.")
+            else:
+                with st.form("form_appro_bar", clear_on_submit=True):
+                    dict_bar = {r['Designation']: r['Code_Article'] for _, r in df_bar.iterrows()}
+                    art_choisi_bar = st.selectbox("Boisson reçue :", list(dict_bar.keys()))
+                    qte_recue_bar = st.number_input("Quantité achetée :", min_value=1, value=24)
+                    px_achat_unit_bar = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=500)
+                    fournisseur_bar = st.text_input("Nom du Fournisseur :", value="SOLIBRA")
+                    
+                    if st.form_submit_button("Générer le Bon d'Entrée Bar 📑"):
+                        code_r = dict_bar[art_choisi_bar]
+                        ref_bon = f"BON-BAR-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                        
+                        ligne_appro = pd.DataFrame([{
+                            'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_BAR', 'Code_Article': code_r,
+                            'Code_Matiere_Stock': code_r, 'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
+                            'Remise_Pourcent': 0, 'Accompagnement': '-', 
+                            'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
+                        }])
+                        st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
+                        idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
+                        st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit_bar
+                        
+                        st.session_state.historique_bons[ref_bon] = {
+                            'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'BAR', 'Article': art_choisi_bar,
+                            'Quantite': qte_recue_bar, 'Prix_Unitaire': px_achat_unit_bar, 'Total': qte_recue_bar * px_achat_unit_bar, 'Fournisseur': fournisseur_bar
+                        }
+                        sauvegarder_ventes()
+                        sauvegarder_menu()
+                        sauvegarder_bons()
+                        st.success(f"Bon {ref_bon} enregistré !")
+                        st.rerun()
+
+    with tab_bons:
+        if not st.session_state.historique_bons:
+            st.info("Aucun bon d'entrée disponible.")
+        else:
+            bon_selectionne = st.selectbox("Choisir un Bon pour contrôle :", list(st.session_state.historique_bons.keys())[::-1])
+            b = st.session_state.historique_bons[bon_selectionne]
+            
+            code_html_bon = f"""
+            <div id="print-area" style="border:2px solid #000; padding:20px; background-color:#fff; color:#000; font-family:monospace; max-width:600px; margin:auto;">
+                <h2 style="text-align:center; margin:0;">EASYGEST RESTO - BON D'ENTRÉE</h2>
+                <p style="text-align:center;"><b>N° BON : {bon_selectionne}</b></p>
+                <hr style="border-top: 1px dashed #000;">
+                <p><b>Date :</b> {b['Date']} | <b>Section :</b> {b['Type']}</p>
+                <p><b>Fournisseur :</b> {b['Fournisseur']}</p>
+                <hr style="border-top: 1px dashed #000;">
+                <table style="width:100%; text-align:left;">
+                    <tr><th>Désignation</th><th>Qté</th><th>P.U</th><th>Total</th></tr>
+                    <tr><td>{b['Article']}</td><td>{b['Quantite']}</td><td>{b['Prix_Unitaire']:,} F</td><td>{b['Total']:,} F</td></tr>
+                </table>
+                <hr style="border-top: 1px dashed #000;">
+                <h4 style="text-align:right;">MONTANT TOTAL : {b['Total']:,} FCFA</h4>
+            </div>
+            """
+            st.markdown(code_html_bon, unsafe_allow_html=True)
+            if st.button("🖨 Imprimer ce Bon d'Entrée", type="primary", use_container_width=True):
+                js_script = f"""
+                <script>
+                    var printWindow = window.open('', '_blank', 'height=600,width=800');
+                    printWindow.document.write('<html><body>{code_html_bon}</body></html>');
+                    printWindow.document.close();
+                    setTimeout(function() {{ printWindow.print(); printWindow.close(); }}, 500);
+                </script>
+                """
+                components.html(js_script, height=0, width=0)
 def vue_finances_marges():
     st.subheader("📊 Rentabilité & Chiffre d'Affaires")
     df_payes = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
