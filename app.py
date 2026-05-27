@@ -193,190 +193,125 @@ if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
-    if len(st.session_state.base_menu) == 0 or (len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']):
-        st.warning("⚠️ La carte est vide. Utilisez l'accès Admin pour la configurer.")
+    df_global = consolider_stocks_et_marges()
+    
+    dict_menu, dict_categories = {}, {}
+    for _, r in st.session_state.base_menu.iterrows():
+        if str(r['Designation']).upper().strip() in MATIERES_PREMIERES_CIBLES: continue
+        label = f"[{r['Categorie']}] {r['Designation']} ({int(r['Prix_Vente_FCFA'])} FCFA)"
+        dict_menu[label] = r['Code_Article']
+        dict_categories[label] = r['Categorie']
+
+    if not dict_menu:
+        st.info("Aucun plat configuré. Allez dans 'Configuration Carte' pour ajouter des articles.")
         return
+
+    with st.form("form_commande_strict", clear_on_submit=True):
+        table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
+        item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
+        categorie_active = dict_categories[item_choisi]
+        accomp_choisi = st.selectbox("Accompagnement :", ["Alloco", "Attiéké", "Frites", "Riz Blanc", "Sans"]) if categorie_active == "Cuisine" else "-"
+        quantite = st.number_input("Quantité :", min_value=1, value=1)
+        opt_remise = st.selectbox("Remise :", [0, 5, 10, 15, 20])
         
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        dict_menu, dict_categories = {}, {}
-        for _, r in st.session_state.base_menu.iterrows():
-            designation_upper = str(r['Designation']).upper().strip()
+        if st.form_submit_button("Envoyer la commande 🚀"):
+            code_art_fini = dict_menu[item_choisi]
+            item_details = df_global[df_global['Code_Article'] == code_art_fini].iloc[0]
+            nom_matiere_brute, coef_defalquage = determiner_matiere_premiere(item_details['Designation'], item_details['Prix_Vente_FCFA'])
             
-            if designation_upper in MATIERES_PREMIERES_CIBLES:
-                continue
-                
-            label = f"[{r['Categorie']}] {r['Designation']} ({int(r['Prix_Vente_FCFA'])} FCFA)"
-            dict_menu[label] = r['Code_Article']
-            dict_categories[label] = r['Categorie']
-
-        if not dict_menu:
-            st.info("Aucun plat commercialisable configuré pour le moment.")
-            return
-
-        with st.form("form_commande_strict", clear_on_submit=True):
-            table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
-            item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
-            categorie_active = dict_categories[item_choisi] if item_choisi else "Cuisine"
-            accomp_choisi = "-"
-            if categorie_active == "Cuisine":
-                accomp_choisi = st.selectbox("Accompagnement gratuit :", ["Alloco", "Attiéké", "Frites", "Riz Blanc", "Riz Gras", "Sans"])
-            quantite = st.number_input("Quantité :", min_value=1, value=1)
-            opt_remise = st.selectbox("Taux de remise :", [0, 5, 10, 15, 20])
-            motif_remise = "Aucun" if opt_remise == 0 else "Geste Commercial"
+            code_article_a_deduire = code_art_fini
+            target_details = item_details
+            quantite_a_deduire = float(quantite)
             
-            if st.form_submit_button("Envoyer la commande 🚀"):
-                code_art_fini = dict_menu[item_choisi]
-                item_details = df_global[df_global['Code_Article'] == code_art_fini].iloc[0]
-                
-                nom_matiere_brute, coef_defalquage = determiner_matiere_premiere(item_details['Designation'], item_details['Prix_Vente_FCFA'])
-                
-                code_article_a_deduire = code_art_fini
-                target_details = item_details
-                quantite_a_deduire = float(quantite)
-                
-                if nom_matiere_brute:
-                    match_brute = df_global[df_global['Designation'].str.upper().str.strip() == nom_matiere_brute.upper()]
-                    if not match_brute.empty:
-                        code_article_a_deduire = match_brute.iloc[0]['Code_Article']
-                        target_details = match_brute.iloc[0]
-                        quantite_a_deduire = float(quantite) * coef_defalquage
-                    else:
-                        st.error(f"❌ Erreur : L'ingrédient de base '{nom_matiere_brute}' n'existe pas en stock.")
-                        st.stop()
+            if nom_matiere_brute:
+                match_brute = df_global[df_global['Designation'].str.upper().str.strip() == nom_matiere_brute.upper()]
+                if not match_brute.empty:
+                    code_article_a_deduire = match_brute.iloc[0]['Code_Article']
+                    target_details = match_brute.iloc[0]
+                    quantite_a_deduire = float(quantite) * coef_defalquage
 
-                if quantite_a_deduire > target_details['Quantite_Dispo']:
-                    st.error(f"❌ Stock insuffisant ! (Disponible en {target_details['Designation']} : {target_details['Quantite_Dispo']} pcs | Demandé : {quantite_a_deduire} pcs)")
-                else:
-                    total_net = (quantite * item_details['Prix_Vente_FCFA']) * (1 - (opt_remise / 100))
-                    
-                    nouvelle_ligne = pd.DataFrame([{
-                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                        'Table': table_choisie, 
-                        'Code_Article': code_art_fini, 
-                        'Code_Matiere_Stock': code_article_a_deduire, 
-                        'Type_Flux': 'Sortie', 
-                        'Quantite': quantite_a_deduire, 
-                        'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
-                        'Remise_Pourcent': opt_remise, 
-                        'Accompagnement': accomp_choisi, 
-                        'Total_FCFA': total_net,
-                        'Motif_Remise': motif_remise, 
-                        'Statut': 'En cours', 
-                        'Ref_Bon': '-'
-                    }])
-                    st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
-                    sauvegarder_ventes()
-                    st.success(f"Commande envoyée ! Plat enregistré : {item_details['Designation']} (Stock réduit de {quantite_a_deduire})")
-                    st.rerun()
-    with col2:
-        st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
+            if quantite_a_deduire > target_details['Quantite_Dispo']:
+                st.error(f"❌ Stock insuffisant pour {target_details['Designation']} ({target_details['Quantite_Dispo']} disponible).")
+            else:
+                total_net = (quantite * item_details['Prix_Vente_FCFA']) * (1 - (opt_remise / 100))
+                nouvelle_ligne = pd.DataFrame([{'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': table_choisie, 'Code_Article': code_art_fini, 'Code_Matiere_Stock': code_article_a_deduire, 'Type_Flux': 'Sortie', 'Quantite': quantite_a_deduire, 'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 'Remise_Pourcent': opt_remise, 'Accompagnement': accomp_choisi, 'Total_FCFA': total_net, 'Motif_Remise': 'Aucun', 'Statut': 'En cours', 'Ref_Bon': '-'}])
+                st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
+                sauvegarder_ventes()
+                st.success("Commande envoyée avec succès !")
+                st.rerun()
 
 def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
     if st.session_state.historique_ventes.empty:
-        st.info("Aucune commande dans le système.")
+        st.info("Aucune commande enregistrée.")
         return
-
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
-    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général des Opérations"])
     
-    with tabs_caisse[0]:
+    t1, t2 = st.tabs(["🪑 Tables Actives", "📋 Historique"])
+    with t1:
         if df_actives.empty:
-            st.success("Toutes les tables sont actuellement réglées. ✨")
+            st.success("Toutes les tables sont réglées. ✨")
         else:
-            tables_occupees = sorted(df_actives['Table'].unique())
-            table_selectionnee = st.selectbox("Sélectionner la table à encaisser :", tables_occupees)
-            df_table_strict = df_actives[df_actives['Table'] == table_selectionnee].copy()
+            table_sel = st.selectbox("Choisir la table :", sorted(df_actives['Table'].unique()))
+            df_table = df_actives[df_actives['Table'] == table_sel]
+            st.dataframe(df_table[['Heure', 'Designation', 'Quantite', 'Total_FCFA']], use_container_width=True, hide_index=True)
+            total = df_table['Total_FCFA'].sum()
+            st.markdown(f"## **Total Net à Payer : {total:,.0f} FCFA**")
             
-            def formater_libelle(row):
-                designation = row['Designation'] if pd.notna(row['Designation']) else "Produit Inconnu"
-                if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans" and pd.notna(row['Accompagnement']):
-                    return f"{designation} (+ {row['Accompagnement']})"
-                return designation
-                
-            # CORRECTION ICI : Parenthèse fermée proprement pour corriger l'erreur de l'image
-            df_table_strict['Désignation Produit'] = df_table_strict.apply(formater_libelle, axis=1)
-            
-            st.dataframe(df_table_strict[['Heure', 'Categorie', 'Désignation Produit', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Total_FCFA']], use_container_width=True, hide_index=True)
-            total_addition = df_table_strict['Total_FCFA'].sum()
-            st.markdown(f"## **Total Net à Payer : {total_addition:,.0f} FCFA**")
-            
-            col_btn1, col_btn2 = st.columns(2)
-            if col_btn1.button(f"Encaisser la {table_selectionnee} 💰", type="primary"):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
-                st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
+            c1, c2 = st.columns(2)
+            if c1.button(f"Encaisser la {table_sel} 💰", type="primary"):
+                idx = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_sel) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
+                st.session_state.historique_ventes.loc[idx, 'Statut'] = 'Payé'
                 sauvegarder_ventes()
-                st.success(f"La {table_selectionnee} a été réglée !")
                 st.rerun()
-                
-            if col_btn2.button(f"Annuler la {table_selectionnee} ❌"):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
-                st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
+            if c2.button(f"Annuler la {table_sel} ❌"):
+                idx = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_sel) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
+                st.session_state.historique_ventes.loc[idx, 'Statut'] = 'Annulé'
                 sauvegarder_ventes()
-                st.warning(f"Commandes annulées.")
                 st.rerun()
-
-    with tabs_caisse[1]:
+    with t2:
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
+def vue_stocks_appro():
+    st.subheader("📦 Gestion des Stocks & Approvisionnements")
+    df_global = consolider_stocks_et_marges()
+    
+    tab_c, tab_b = st.tabs(["🍳 Cuisine", "🍹 Bar"])
+    with tab_c:
+        df_c = df_global[(df_global['Categorie'] == 'Cuisine') & (df_global['Designation'].str.upper().str.strip().isin(MATIERES_PREMIERES_CIBLES))]
+        st.dataframe(df_c[['Code_Article', 'Designation', 'Quantite_Dispo', 'Stock_Minimum']], use_container_width=True, hide_index=True)
+        
+        with st.expander("📥 Ajouter du Stock Cuisine"):
+            with st.form("form_appro_c", clear_on_submit=True):
+                art_choisi = st.selectbox("Sélectionner l'ingrédient :", list(df_c['Designation'].unique()))
+                qte = st.number_input("Quantité reçue :", min_value=1, value=10)
+                px = st.number_input("Prix d'achat unitaire :", min_value=0, value=1000)
+                if st.form_submit_button("Valider l'entrée"):
+                    code = df_c[df_c['Designation'] == art_choisi].iloc[0]['Code_Article']
+                    ligne = pd.DataFrame([{
+                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+                        'Table': 'APPRO_CUISINE', 
+                        'Code_Article': code, 
+                        'Code_Matiere_Stock': code, 
+                        'Type_Flux': 'Réappro', 
+                        'Quantite': qte, 
+                        'Prix_Unitaire_Flux': px, 
+                        'Remise_Pourcent': 0, 
+                        'Accompagnement': '-', 
+                        'Total_FCFA': qte*px, 
+                        'Motif_Remise': 'Aucun', 
+                        'Statut': 'Stocké', 
+                        'Ref_Bon': '-'
+                    }])
+                    st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne], ignore_index=True)
+                    sauvegarder_ventes()
+                    st.success("Stock mis à jour avec succès !")
+                    st.rerun()
+    with tab_b:
+        df_b = df_global[df_global['Categorie'] == 'Bar']
+        st.dataframe(df_b[['Code_Article', 'Designation', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Vente_FCFA']], use_container_width=True, hide_index=True)
 
-def vue_finances_marges():
-    st.subheader("📊 Rentabilité & Chiffre d'Affaires")
-    df_payes = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
-    if df_payes.empty:
-        st.info("Aucune donnée financière pour le moment.")
-        return
-    ca = df_payes['Total_FCFA'].sum()
-    st.metric("Chiffre d'Affaires Global Encaissé", f"{ca:,.0f} FCFA")
-
-def vue_cloture_caisse():
-    st.subheader("🔒 Clôture de Caisse")
-    df_v = st.session_state.historique_ventes
-    df_jour = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'Payé')]
-    ca_attendu = df_jour['Total_FCFA'].sum() if not df_jour.empty else 0
-    st.metric("Recette Attendue Système", f"{ca_attendu:,.0f} FCFA")
-
-def vue_configuration_carte():
-    st.subheader("⚙️ Configuration de la Carte des Produits")
-    with st.form("add_art", clear_on_submit=True):
-        code = st.text_input("Code unique :")
-        des = st.text_input("Nom de l'article :")
-        cat = st.selectbox("Catégorie :", ["Cuisine", "Bar"])
-        px = st.number_input("Prix de vente (FCFA) :", min_value=0, step=500)
-        if st.form_submit_button("Enregistrer l'article"):
-            if code and des:
-                new_row = pd.DataFrame([{'Code_Article': code, 'Designation': des, 'Categorie': cat, 'Stock_Initial': 0, 'Stock_Minimum': 5, 'Prix_Vente_FCFA': px, 'Prix_Achat_Moyen_FCFA': 0}])
-                st.session_state.base_menu = pd.concat([st.session_state.base_menu, new_row], ignore_index=True)
-                sauvegarder_menu()
-                st.success("Article ajouté !")
-                st.rerun()
-    st.dataframe(st.session_state.base_menu, use_container_width=True, hide_index=True)
-
-def vue_administrateur():
-    st.subheader("🔐 Espace d'Administration Général")
-    st.write("### Liste des Utilisateurs")
-    st.dataframe(st.session_state.base_utilisateurs, use_container_width=True, hide_index=True)
-
-# ==========================================
-# AIGUILLAGE DE LA NAVIGATION (ROUTEUR)
-# ==========================================
-if choix_vue == "📝 Prise de Commande":
-    vue_prise_commande()
-elif choix_vue == "🧾 Commandes & Additions":
-    vue_commandes_additions()
-elif choix_vue == "📦 Stocks & Approvisionnements":
-    vue_stocks_appro()
-elif choix_vue == "📊 Finances & Marges":
-    vue_finances_marges()
-elif choix_vue == "🔒 Clôture de Caisse":
-    vue_cloture_caisse()
-elif choix_vue == "⚙️ Configuration Carte":
-    vue_configuration_carte()
-elif choix_vue == "🔐 Administrateur":
-    vue_administrateur()
-                
 def vue_finances_marges():
     st.subheader("📊 Rentabilité & Chiffre d'Affaires")
     df_payes = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
