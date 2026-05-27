@@ -107,9 +107,13 @@ def sauvegarder_utilisateurs(): st.session_state.base_utilisateurs.to_csv(CSV_UT
 def sauvegarder_menu(): st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
 def sauvegarder_ventes(): st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
 def sauvegarder_z_historique(): st.session_state.historique_z.to_csv(CSV_Z_HISTORIQUE, index=False, encoding='utf-8-sig')
+
 def sauvegarder_bons():
     liste_bons = [{'Ref_Bon': k, **v} for k, v in st.session_state.historique_bons.items()]
-    pd.DataFrame(liste_bons if liste_bons else columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur']).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+    if liste_bons:
+        pd.DataFrame(liste_bons).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+    else:
+        pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur']).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
 
 def consolider_stocks_et_marges():
     df_art = st.session_state.base_menu.copy()
@@ -276,9 +280,25 @@ def vue_stocks_appro():
                 px = st.number_input("Prix d'achat unitaire :", min_value=0, value=1000)
                 if st.form_submit_button("Valider l'entrée"):
                     code = df_c[df_c['Designation'] == art_choisi].iloc[0]['Code_Article']
-                    ligne = pd.DataFrame([{'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 'Code_Article': code, 'Code_Matiere_Stock': code, 'Type_Flux': 'Réappro', 'Quantite': qte, 'Prix_Unitaire_Flux': px, 'Remise_Pourcent': 0, 'Accompagnement': '-', 'Total_FCFA': qte*px, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': '-'}]).to_csv(CSV_VENTES, mode='a', header=False, index=False, encoding='utf-8-sig')
-                    st.session_state.historique_ventes = pd.read_csv(CSV_VENTES)
-                    st.success("Stock mis à jour !")
+                    # Correction stricte ici pour éviter l'erreur de chaînage
+                    ligne = pd.DataFrame([{
+                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+                        'Table': 'APPRO_CUISINE', 
+                        'Code_Article': code, 
+                        'Code_Matiere_Stock': code, 
+                        'Type_Flux': 'Réappro', 
+                        'Quantite': qte, 
+                        'Prix_Unitaire_Flux': px, 
+                        'Remise_Pourcent': 0, 
+                        'Accompagnement': '-', 
+                        'Total_FCFA': qte*px, 
+                        'Motif_Remise': 'Aucun', 
+                        'Statut': 'Stocké', 
+                        'Ref_Bon': '-'
+                    }])
+                    st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne], ignore_index=True)
+                    sauvegarder_ventes()
+                    st.success("Stock mis à jour avec succès !")
                     st.rerun()
     with tab_b:
         df_b = df_global[df_global['Categorie'] == 'Bar']
@@ -286,55 +306,4 @@ def vue_stocks_appro():
 
 def vue_finances_marges():
     st.subheader("📊 Rentabilité & Chiffre d'Affaires")
-    df_payes = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
-    if df_payes.empty:
-        st.info("Aucune donnée financière pour le moment.")
-        return
-    ca = df_payes['Total_FCFA'].sum()
-    st.metric("Chiffre d'Affaires Global Encaissé", f"{ca:,.0f} FCFA")
-
-def vue_cloture_caisse():
-    st.subheader("🔒 Clôture de Caisse")
-    df_v = st.session_state.historique_ventes
-    df_jour = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'Payé')]
-    ca_attendu = df_jour['Total_FCFA'].sum() if not df_jour.empty else 0
-    st.metric("Recette Attendue Système", f"{ca_attendu:,.0f} FCFA")
-
-def vue_configuration_carte():
-    st.subheader("⚙️ Configuration de la Carte des Produits")
-    with st.form("add_art", clear_on_submit=True):
-        code = st.text_input("Code unique :")
-        des = st.text_input("Nom de l'article :")
-        cat = st.selectbox("Catégorie :", ["Cuisine", "Bar"])
-        px = st.number_input("Prix de vente (FCFA) :", min_value=0, step=500)
-        if st.form_submit_button("Enregistrer l'article"):
-            if code and des:
-                new_row = pd.DataFrame([{'Code_Article': code, 'Designation': des, 'Categorie': cat, 'Stock_Initial': 0, 'Stock_Minimum': 5, 'Prix_Vente_FCFA': px, 'Prix_Achat_Moyen_FCFA': 0}])
-                st.session_state.base_menu = pd.concat([st.session_state.base_menu, new_row], ignore_index=True)
-                sauvegarder_menu()
-                st.success("Article ajouté !")
-                st.rerun()
-    st.dataframe(st.session_state.base_menu, use_container_width=True, hide_index=True)
-
-def vue_administrateur():
-    st.subheader("🔐 Espace d'Administration Général")
-    st.write("### Liste des Utilisateurs")
-    st.dataframe(st.session_state.base_utilisateurs, use_container_width=True, hide_index=True)
-
-# ==========================================
-# AIGUILLAGE DE LA NAVIGATION (ROUTEUR) - CORRIGÉ ET ACTIF
-# ==========================================
-if choix_vue == "📝 Prise de Commande":
-    vue_prise_commande()
-elif choix_vue == "🧾 Commandes & Additions":
-    vue_commandes_additions()
-elif choix_vue == "📦 Stocks & Approvisionnements":
-    vue_stocks_appro()
-elif choix_vue == "📊 Finances & Marges":
-    vue_finances_marges()
-elif choix_vue == "🔒 Clôture de Caisse":
-    vue_cloture_caisse()
-elif choix_vue == "⚙️ Configuration Carte":
-    vue_configuration_carte()
-elif choix_vue == "🔐 Administrateur":
-    vue_administrateur()
+    df_payes = st.session_state.historique_ventes
