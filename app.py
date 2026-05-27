@@ -466,11 +466,70 @@ def vue_finances_marges():
 
 
 def vue_cloture_caisse():
-    st.subheader("🔒 Clôture de Caisse")
+    st.subheader("🔒 Clôture Journalière & Génération du Z de Caisse")
+    st.write(f"Date d'activité : **{datetime.now().strftime('%d/%m/%Y')}**")
+    st.markdown("---")
+    
     df_v = st.session_state.historique_ventes
-    df_jour = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'Payé')]
-    ca_attendu = df_jour['Total_FCFA'].sum() if not df_jour.empty else 0
-    st.metric("Recette Attendue Système", f"{ca_attendu:,.0f} FCFA")
+    df_jour_paye = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'Payé')].copy()
+    df_jour_en_cours = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'En cours')].copy()
+    
+    ca_brut = df_jour_paye['Total_FCFA'].sum() if not df_jour_paye.empty else 0
+    nb_couverts = int(df_jour_paye['Quantite'].sum()) if not df_jour_paye.empty else 0
+    nb_tables = df_jour_paye['Table'].nunique() if not df_jour_paye.empty else 0
+    panier_moyen = ca_brut / nb_tables if nb_tables > 0 else 0
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Recette Attendue Système (FCFA)", f"{ca_brut:,.0f} F")
+    c2.metric("Total Articles Vendus", f"{nb_couverts} pcs")
+    c3.metric("Nombre de Tables Servies", f"{nb_tables}")
+    c4.metric("Panier Moyen / Table", f"{panier_moyen:,.0f} F")
+    
+    if not df_jour_en_cours.empty:
+        st.warning(f"⚠️ **Clôture impossible :** Il reste **{len(df_jour_en_cours)} table(s) en cours** non soldée(s).")
+        return
+
+    col_input1, col_input2 = st.columns(2)
+    with col_input1:
+        montant_verse = st.number_input("💵 MONTANT RÉELLEMENT VERSÉ (FCFA) :", min_value=0, value=int(ca_brut), step=500, key="cloture_verse")
+        fond_de_caisse = st.number_input("Montant de fond de caisse laissé (FCFA) :", min_value=0, value=15000, key="cloture_fond")
+    with col_input2:
+        nom_caissier = st.text_input("Nom du caissier responsable :", value=st.session_state.nom_utilisateur, key="cloture_user")
+        remarques = st.text_area("Observations / Raisons de l'écart éventuel :", key="cloture_obs")
+
+    ecart_caisse = montant_verse - ca_brut
+    if ecart_caisse == 0:
+        st.success("✅ Caisse Parfaite !")
+    elif ecart_caisse > 0:
+        st.warning(f"📈 Excédent de Caisse : +{ecart_caisse:,.0f} FCFA")
+    else:
+        st.error(f"📉 Déficit de Caisse : {ecart_caisse:,.0f} FCFA")
+
+    check_verrou = st.checkbox("Je certifie l'exactitude des montants comptés et du versement.", key="cloture_check")
+    
+    if st.button("🔒 Générer, Imprimer & Archiver le Z de Caisse", type="primary", use_container_width=True):
+        if not nom_caissier or not check_verrou:
+            st.error("❌ Veuillez saisir le nom du caissier et cocher la case de certification avant de clore.")
+        else:
+            ref_z = f"Z-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            nouveau_z = pd.DataFrame([{
+                'Ref_Z': ref_z,
+                'Date_Cloture': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'Caissier': nom_caissier,
+                'Recette_Encaissee': ca_brut,
+                'Montant_Verse': montant_verse,
+                'Ecart_Caisse': ecart_caisse,
+                'Articles_Vendus': nb_couverts,
+                'Tables_Servies': nb_tables,
+                'Fond_De_Caisse': fond_de_caisse,
+                'Observations': remarques
+            }])
+            
+            st.session_state.historique_z = pd.concat([st.session_state.historique_z, nouveau_z], ignore_index=True)
+            sauvegarder_z_historique()
+            
+            st.success(f"Le Z de caisse {ref_z} a été archivé avec succès !")
+            st.dataframe(nouveau_z, use_container_width=True, hide_index=True)
 
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte des Produits")
