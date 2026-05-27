@@ -307,3 +307,20 @@ def vue_stocks_appro():
 def vue_finances_marges():
     st.subheader("📊 Rentabilité & Chiffre d'Affaires")
     df_payes = st.session_state.historique_ventes
+    # ==========================================
+# AIGUILLAGE DES VUES (LOGIQUE DE ROUTAGE)
+# ==========================================
+if choix_vue == "📝 Prise de Commande":
+    vue_prise_commande()
+elif choix_vue == "🧾 Commandes & Additions":
+    vue_commandes_additions()
+elif choix_vue == "📦 Stocks & Approvisionnements":
+    vue_stocks_appro()
+elif choix_vue == "📊 Finances & Marges":
+    vue_finances_marges()
+elif choix_vue == "🔒 Clôture de Caisse":
+    vue_cloture_caisse()
+elif choix_vue == "⚙️ Configuration Carte":
+    vue_configuration_carte()
+elif choix_vue == "🔐 Administrateur":
+    vue_administrateur()
