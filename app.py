@@ -443,13 +443,27 @@ def vue_stocks_appro():
                 """
                 components.html(js_script, height=0, width=0)
 def vue_finances_marges():
-    st.subheader("📊 Rentabilité & Chiffre d'Affaires")
-    df_payes = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
-    if df_payes.empty:
-        st.info("Aucune donnée financière pour le moment.")
+    st.subheader("📊 Compte d'Exploitation & Rentabilité Réelle")
+    df_ventes_payees = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
+    if df_ventes_payees.empty:
+        st.info("Les données financières apparaîtront après les premiers encaissements.")
         return
-    ca = df_payes['Total_FCFA'].sum()
-    st.metric("Chiffre d'Affaires Global Encaissé", f"{ca:,.0f} FCFA")
+        
+    df_calc_marge = df_ventes_payees.groupby('Code_Article').agg({'Quantite': 'sum', 'Total_FCFA': 'sum'}).reset_index()
+    df_calc_marge = df_calc_marge.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Prix_Achat_Moyen_FCFA']], on='Code_Article', how='left')
+    df_calc_marge['Cout_Total_Achat'] = df_calc_marge['Quantite'] * df_calc_marge['Prix_Achat_Moyen_FCFA'].fillna(0)
+    df_calc_marge['Marge_Brute_FCFA'] = df_calc_marge['Total_FCFA'] - df_calc_marge['Cout_Total_Achat']
+    
+    ca_total = df_calc_marge['Total_FCFA'].sum()
+    cout_achats_total = df_calc_marge['Cout_Total_Achat'].sum()
+    marge_globale = df_calc_marge['Marge_Brute_FCFA'].sum()
+    taux_marge_global = (marge_globale / ca_total) * 100 if ca_total > 0 else 0
+    
+    f1, f2, f3 = st.columns(3)
+    f1.metric("Chiffre d'Affaires Net Encaissé", f"{ca_total:,.0f} FCFA")
+    f2.metric("Coût des Matières (Achats)", f"{cout_achats_total:,.0f} FCFA", delta="-Coûts", delta_color="inverse")
+    f3.metric("Marge Réelle nette", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
+
 
 def vue_cloture_caisse():
     st.subheader("🔒 Clôture de Caisse")
