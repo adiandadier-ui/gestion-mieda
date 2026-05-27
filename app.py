@@ -164,4 +164,148 @@ if 'historique_bons' not in st.session_state:
             'Total': r['Total'], 'Fournisseur': r['Fournisseur']
         }
 
-# =================
+# ==========================================
+# 3. GESTION DES SAUVEGARDES ET STOCKS
+# ==========================================
+def sauvegarder_utilisateurs():
+    st.session_state.base_utilisateurs.to_csv(CSV_UTILISATEURS, index=False, encoding='utf-8-sig')
+
+def sauvegarder_menu():
+    st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
+
+def sauvegarder_ventes():
+    st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
+
+def sauvegarder_bons():
+    liste_bons = [{'Ref_Bon': k, **v} for k, v in st.session_state.historique_bons.items()]
+    if liste_bons:
+        pd.DataFrame(liste_bons).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+    else:
+        pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur']).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+
+def sauvegarder_z_historique():
+    st.session_state.historique_z.to_csv(CSV_Z_HISTORIQUE, index=False, encoding='utf-8-sig')
+
+def consolider_stocks_et_marges():
+    df_art = st.session_state.base_menu.copy()
+    df_vnt = st.session_state.historique_ventes.copy()
+    
+    if not df_vnt.empty:
+        df_sorties = df_vnt[(df_vnt['Type_Flux'] == 'Sortie') & (df_vnt['Statut'] != 'Annulé')].groupby('Code_Matiere_Stock')['Quantite'].sum().reset_index(name='Total_Sorties')
+        df_sorties.rename(columns={'Code_Matiere_Stock': 'Code_Article'}, inplace=True)
+        
+        df_entrees = df_vnt[df_vnt['Type_Flux'] == 'Réappro'].groupby('Code_Matiere_Stock')['Quantite'].sum().reset_index(name='Total_Entrees')
+        df_entrees.rename(columns={'Code_Matiere_Stock': 'Code_Article'}, inplace=True)
+    else:
+        df_sorties = pd.DataFrame(columns=['Code_Article', 'Total_Sorties'])
+        df_entrees = pd.DataFrame(columns=['Code_Article', 'Total_Entrees'])
+        
+    df_res = df_art.merge(df_sorties, on='Code_Article', how='left').merge(df_entrees, on='Code_Article', how='left')
+    df_res['Total_Sorties'] = df_res['Total_Sorties'].fillna(0)
+    df_res['Total_Entrees'] = df_res['Total_Entrees'].fillna(0)
+    df_res['Quantite_Dispo'] = df_res['Stock_Initial'] + df_res['Total_Entrees'] - df_res['Total_Sorties']
+    return df_res
+
+# ==========================================
+# 4. GESTION DE L'AUTHENTIFICATION
+# ==========================================
+if 'authentifie' not in st.session_state:
+    st.session_state.authentifie = False
+if 'role_utilisateur' not in st.session_state:
+    st.session_state.role_utilisateur = None
+if 'nom_utilisateur' not in st.session_state:
+    st.session_state.nom_utilisateur = None
+
+OPTIONS_PAR_ROLE = {
+    "Serveur": ["📝 Prise de Commande"],
+    "Responsable Caisse": ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements"],
+    "Administrateur": [
+        "📝 Prise de Commande", 
+        "🧾 Commandes & Additions", 
+        "📦 Stocks & Approvisionnements", 
+        "📊 Finances & Marges", 
+        "🔒 Clôture de Caisse", 
+        "⚙️ Configuration Carte", 
+        "🔐 Administrateur"
+    ]
+}
+
+# --- ÉCRAN DE CONNEXION ---
+if not st.session_state.authentifie:
+    st.markdown("<style>div[data-testid='stSidebarNav'] {display: none;}</style>", unsafe_allow_html=True)
+    col_gauche, col_centre, col_droite = st.columns([1, 1.2, 1])
+    
+    with col_centre:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style="text-align: center; background-color: #f8f9fa; padding: 20px; border-radius: 10px; border-left: 5px solid #ff4b4b; margin-bottom: 25px;">
+                <h1 style="margin: 0; color: #31333F; font-size: 28px;">🍳 Easygest Resto</h1>
+                <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">Système de Gestion Intégrée & Suivi de Caisse</p>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+        
+        with st.container(border=True):
+            st.markdown("<h3 style='text-align: center; margin-top: 0; color: #495057;'>Connexion</h3>", unsafe_allow_html=True)
+            identifiant_input = st.text_input("👤 Identifiant :", placeholder="Ex: admin")
+            mot_de_passe_input = st.text_input("🔑 Mot de passe :", type="password", placeholder="••••••••")
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            if st.button("Se connecter au système 🚀", use_container_width=True, type="primary"):
+                utilisateurs = st.session_state.base_utilisateurs
+                match = utilisateurs[(utilisateurs['Identifiant'] == identifiant_input) & (utilisateurs['Mot_De_Passe'] == mot_de_passe_input)]
+                
+                if not match.empty:
+                    st.session_state.authentifie = True
+                    st.session_state.role_utilisateur = match.iloc[0]['Role']
+                    st.session_state.nom_utilisateur = match.iloc[0]['Identifiant']
+                    st.success("Connexion réussie !")
+                    st.rerun()
+                else:
+                    st.error("❌ Identifiant ou mot de passe incorrect.")
+    st.stop()  # On bloque l'exécution ici tant qu'on n'est pas connecté
+
+# ==========================================
+# 5. NAVIGATION PRINCIPALE (SIDEBAR) - UNIQUEMENT APPRÈS CONNEXION
+# ==========================================
+st.sidebar.title("🍳 Menu Easygest")
+options_disponibles = OPTIONS_PAR_ROLE.get(st.session_state.role_utilisateur, ["📝 Prise de Commande"])
+choix_vue = st.sidebar.radio("Navigation :", options_disponibles)
+
+if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
+    st.session_state.authentifie = False
+    st.session_state.role_utilisateur = None
+    st.session_state.nom_utilisateur = None
+    st.rerun()
+
+# ==========================================
+# VUE 1 : PRISE DE COMMANDE 
+# ==========================================
+def vue_prise_commande():
+    st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
+    df_global = consolider_stocks_et_marges()
+    
+    if len(st.session_state.base_menu) == 0 or (len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']):
+        st.warning("⚠️ La carte est vide. Utilisez l'accès Admin pour la configurer.")
+        return
+        
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        dict_menu, dict_categories = {}, {}
+        for _, r in st.session_state.base_menu.iterrows():
+            designation_upper = str(r['Designation']).upper().strip()
+            if designation_upper in MATIERES_PREMIERES_CIBLES:
+                continue
+            label = f"[{r['Categorie']}] {r['Designation']} ({int(r['Prix_Vente_FCFA'])} FCFA)"
+            dict_menu[label] = r['Code_Article']
+            dict_categories[label] = r['Categorie']
+
+        if not dict_menu:
+            st.info("Aucun plat commercialisable configuré pour le moment.")
+            return
+
+        with st.form("form_commande_strict", clear_on_submit=True):
+            table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
+            item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
