@@ -234,25 +234,8 @@ OPTIONS_PAR_ROLE = {
     ]
 }
 
-if not st.session_state.authentifie:
-    st.title("🔑 Connexion Easygest Resto Pro+")
-    identifiant_input = st.text_input("Identifiant :")
-    mot_de_passe_input = st.text_input("Mot de passe :", type="password")
-    
-    if st.button("Se connecter 🚀", use_container_width=True):
-        utilisateurs = st.session_state.base_utilisateurs
-        match = utilisateurs[(utilisateurs['Identifiant'] == identifiant_input) & (utilisateurs['Mot_De_Passe'] == mot_de_passe_input)]
-        
-        if not match.empty:
-            st.session_state.authentifie = True
-            st.session_state.role_utilisateur = match.iloc[0]['Role']
-            st.session_state.nom_utilisateur = match.iloc[0]['Identifiant']
-            st.success("Connexion réussie !")
-            st.rerun()
-        else:
-            st.error("Identifiant ou mot de passe incorrect.")
-    st.stop()
-
+def sauvegarder_utilisateurs():
+    st.session_state.base_utilisateurs.to_csv(CSV_UTILISATEURS, index=False, encoding='utf-8-sig')
 # ==========================================
 # 5. NAVIGATION PRINCIPALE (SIDEBAR)
 # ==========================================
