@@ -6,62 +6,6 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # ==========================================
-# 0. FONCTION DE CALIBRAGE & LISTE DES MATIÈRES PREMIÈRES
-# ==========================================
-MATIERES_PREMIERES_CIBLES = [
-    "PETIT POISSON", 
-    "MOYEN POISSON", 
-    "GROS POISSON", 
-    "POULET", 
-    "LAPIN", 
-    "PINTADE"
-]
-
-def determiner_matiere_premiere(nom_article, prix_unitaire):
-    """
-    Détermine le libellé exact de la matière première en stock à impacter
-    ainsi que le coefficient de décalquage (consommation de stock).
-    Retourne un tuple: (nom_matiere_premiere, coefficient_defalquage)
-    """
-    nom_article_up = str(nom_article).upper().strip()
-    
-    # --- CAS DES POISSONS (Par défaut coefficient 1) ---
-    if "POISSON" in nom_article_up:
-        coef = 1.0
-        if prix_unitaire == 2000:
-            return "PETIT POISSON", coef
-        elif prix_unitaire == 4000:
-            return "MOYEN POISSON", coef
-        elif prix_unitaire == 6000:
-            return "GROS POISSON", coef
-        else:
-            if "PETIT" in nom_article_up: return "PETIT POISSON", coef
-            if "MOYEN" in nom_article_up: return "MOYEN POISSON", coef
-            if "GROS" in nom_article_up: return "GROS POISSON", coef
-            return None, 0.0
-            
-    # --- CAS DES VIANDES FRACTIONNÉES (POULET, PINTADE, LAPIN) ---
-    base_viande = None
-    if "POULET" in nom_article_up:
-        base_viande = "POULET"
-    elif "LAPIN" in nom_article_up:
-        base_viande = "LAPIN"
-    elif "PINTADE" in nom_article_up:
-        base_viande = "PINTADE"
-
-    if base_viande:
-        # Analyse de la portion/fraction dans le nom de l'article
-        if "1/4" in nom_article_up or "QUART" in nom_article_up:
-            return base_viande, 0.25
-        elif "1/2" in nom_article_up or "DEMI" in nom_article_up:
-            return base_viande, 0.50
-        else:
-            # Par défaut, si rien n'est spécifié, on retire 1 entier
-            return base_viande, 1.0
-        
-    return None, 0.0
-
-# ==========================================
 # 1. CONFIGURATION DE L'INTERFACE
 # ==========================================
 st.set_page_config(
@@ -75,7 +19,12 @@ st.set_page_config(
 # 2. INITIALISATION ET STOCKAGE LOCAL (C:)
 # ==========================================
 def initialiser_dossier_easygest():
+    """
+    Vérifie l'existence du dossier 'EASYGEST APPS' sur le disque C:
+    et le crée s'il n'existe pas.
+    """
     chemin_cible = r"C:\EASYGEST APPS"
+    
     if not os.path.exists(chemin_cible):
         try:
             os.makedirs(chemin_cible)
@@ -114,7 +63,7 @@ def initialiser_fichiers_csv():
 
     if not os.path.exists(CSV_VENTES):
         df_init_ventes = pd.DataFrame(columns=[
-            'Heure', 'Table', 'Code_Article', 'Code_Matiere_Stock', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
+            'Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 
             'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'
         ])
         df_init_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
@@ -142,13 +91,12 @@ def initialiser_fichiers_csv():
 
 initialiser_fichiers_csv()
 
+# Chargement des données persistantes
 if 'base_menu' not in st.session_state:
     st.session_state.base_menu = pd.read_csv(CSV_MENU)
 
 if 'historique_ventes' not in st.session_state:
     st.session_state.historique_ventes = pd.read_csv(CSV_VENTES)
-    if 'Code_Matiere_Stock' not in st.session_state.historique_ventes.columns:
-        st.session_state.historique_ventes['Code_Matiere_Stock'] = st.session_state.historique_ventes['Code_Article']
 
 if 'historique_z' not in st.session_state:
     st.session_state.historique_z = pd.read_csv(CSV_Z_HISTORIQUE)
@@ -167,51 +115,7 @@ if 'historique_bons' not in st.session_state:
         }
 
 # ==========================================
-# 3. GESTION DES SAUVEGARDES ET STOCKS
-# ==========================================
-def sauvegarder_utilisateurs():
-    st.session_state.base_utilisateurs.to_csv(CSV_UTILISATEURS, index=False, encoding='utf-8-sig')
-
-def sauvegarder_menu():
-    st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
-
-def sauvegarder_ventes():
-    st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
-
-def sauvegarder_bons():
-    liste_bons = [{'Ref_Bon': k, **v} for k, v in st.session_state.historique_bons.items()]
-    if liste_bons:
-        pd.DataFrame(liste_bons).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
-    else:
-        pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur']).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
-
-def sauvegarder_z_historique():
-    st.session_state.historique_z.to_csv(CSV_Z_HISTORIQUE, index=False, encoding='utf-8-sig')
-
-def consolider_stocks_et_marges():
-    df_art = st.session_state.base_menu.copy()
-    df_vnt = st.session_state.historique_ventes.copy()
-    
-    if not df_vnt.empty:
-        df_sorties = df_vnt[(df_vnt['Type_Flux'] == 'Sortie') & (df_vnt['Statut'] != 'Annulé')].groupby('Code_Matiere_Stock')['Quantite'].sum().reset_index(name='Total_Sorties')
-        df_sorties.rename(columns={'Code_Matiere_Stock': 'Code_Article'}, inplace=True)
-        
-        df_entrees = df_vnt[df_vnt['Type_Flux'] == 'Réappro'].groupby('Code_Matiere_Stock')['Quantite'].sum().reset_index(name='Total_Entrees')
-        df_entrees.rename(columns={'Code_Matiere_Stock': 'Code_Article'}, inplace=True)
-    else:
-        df_sorties = pd.DataFrame(columns=['Code_Article', 'Total_Sorties'])
-        df_entrees = pd.DataFrame(columns=['Code_Article', 'Total_Entrees'])
-        
-    df_res = df_art.merge(df_sorties, on='Code_Article', how='left').merge(df_entrees, on='Code_Article', how='left')
-    df_res['Total_Sorties'] = df_res['Total_Sorties'].fillna(0)
-    df_res['Total_Entrees'] = df_res['Total_Entrees'].fillna(0)
-    df_res['Quantite_Dispo'] = df_res['Stock_Initial'] + df_res['Total_Entrees'] - df_res['Total_Sorties']
-    return df_res
-
-df_global = consolider_stocks_et_marges()
-
-# ==========================================
-# 4. GESTION DE L'AUTHENTIFICATION
+# 3. GESTION DE L'AUTHENTIFICATION & ROLES
 # ==========================================
 if 'authentifie' not in st.session_state:
     st.session_state.authentifie = False
@@ -236,44 +140,58 @@ OPTIONS_PAR_ROLE = {
 
 def sauvegarder_utilisateurs():
     st.session_state.base_utilisateurs.to_csv(CSV_UTILISATEURS, index=False, encoding='utf-8-sig')
-# ==========================================
-# 5. NAVIGATION PRINCIPALE (SIDEBAR)
-# ==========================================
-st.sidebar.title("🍳 Menu Easygest")
-options_disponibles = OPTIONS_PAR_ROLE.get(st.session_state.role_utilisateur, ["📝 Prise de Commande"])
-choix_vue = st.sidebar.radio("Navigation :", options_disponibles)
-
-if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
-    st.session_state.authentifie = False
-    st.session_state.role_utilisateur = None
-    st.session_state.nom_utilisateur = None
-    st.rerun()
 
 # ==========================================
-# VUE 1 : PRISE DE COMMANDE 
+# 4. FONCTIONS DE SAUVEGARDE SUR LE DISQUE
+# ==========================================
+def sauvegarder_menu():
+    st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
+
+def sauvegarder_ventes():
+    st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
+
+def sauvegarder_bons():
+    liste_bons = [{'Ref_Bon': k, **v} for k, v in st.session_state.historique_bons.items()]
+    if liste_bons:
+        pd.DataFrame(liste_bons).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+    else:
+        pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur']).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
+
+def sauvegarder_z_historique():
+    st.session_state.historique_z.to_csv(CSV_Z_HISTORIQUE, index=False, encoding='utf-8-sig')
+
+def consolider_stocks_et_marges():
+    df_art = st.session_state.base_menu.copy()
+    df_vnt = st.session_state.historique_ventes.copy()
+    if not df_vnt.empty:
+        df_sorties = df_vnt[(df_vnt['Type_Flux'] == 'Sortie') & (df_vnt['Statut'] != 'Annulé')].groupby('Code_Article')['Quantite'].sum().reset_index(name='Total_Sorties')
+        df_entrees = df_vnt[df_vnt['Type_Flux'] == 'Réappro'].groupby('Code_Article')['Quantite'].sum().reset_index(name='Total_Entrees')
+    else:
+        df_sorties = pd.DataFrame(columns=['Code_Article', 'Total_Sorties'])
+        df_entrees = pd.DataFrame(columns=['Code_Article', 'Total_Entrees'])
+    df_res = df_art.merge(df_sorties, on='Code_Article', how='left').merge(df_entrees, on='Code_Article', how='left')
+    df_res['Total_Sorties'] = df_res['Total_Sorties'].fillna(0)
+    df_res['Total_Entrees'] = df_res['Total_Entrees'].fillna(0)
+    df_res['Quantite_Dispo'] = df_res['Stock_Initial'] + df_res['Total_Entrees'] - df_res['Total_Sorties']
+    return df_res
+
+df_global = consolider_stocks_et_marges()
+
+# ==========================================
+# VUE 1 : PRISE DE COMMANDE
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
     if len(st.session_state.base_menu) == 0 or (len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']):
         st.warning("⚠️ La carte est vide. Utilisez l'accès Admin pour la configurer.")
         return
-        
     col1, col2 = st.columns([1, 1])
     with col1:
         dict_menu, dict_categories = {}, {}
         for _, r in st.session_state.base_menu.iterrows():
-            designation_upper = str(r['Designation']).upper().strip()
-            
-            if designation_upper in MATIERES_PREMIERES_CIBLES:
-                continue
-                
             label = f"[{r['Categorie']}] {r['Designation']} ({int(r['Prix_Vente_FCFA'])} FCFA)"
             dict_menu[label] = r['Code_Article']
             dict_categories[label] = r['Categorie']
-
-        if not dict_menu:
-            st.info("Aucun plat commercialisable configuré pour le moment.")
-            return
 
         with st.form("form_commande_strict", clear_on_submit=True):
             table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
@@ -287,63 +205,38 @@ def vue_prise_commande():
             motif_remise = "Aucun" if opt_remise == 0 else "Geste Commercial"
             
             if st.form_submit_button("Envoyer la commande 🚀"):
-                code_art_fini = dict_menu[item_choisi]
-                item_details = df_global[df_global['Code_Article'] == code_art_fini].iloc[0]
-                
-                nom_matiere_brute, coef_defalquage = determiner_matiere_premiere(item_details['Designation'], item_details['Prix_Vente_FCFA'])
-                
-                code_article_a_deduire = code_art_fini
-                target_details = item_details
-                quantite_a_deduire = float(quantite)
-                
-                if nom_matiere_brute:
-                    match_brute = df_global[df_global['Designation'].str.upper().str.strip() == nom_matiere_brute.upper()]
-                    if not match_brute.empty:
-                        code_article_a_deduire = match_brute.iloc[0]['Code_Article']
-                        target_details = match_brute.iloc[0]
-                        quantite_a_deduire = float(quantite) * coef_defalquage
-                    else:
-                        st.error(f"❌ Erreur : L'ingrédient de base '{nom_matiere_brute}' n'existe pas en stock.")
-                        st.stop()
-
-                if quantite_a_deduire > target_details['Quantite_Dispo']:
-                    st.error(f"❌ Stock insuffisant ! (Disponible en {target_details['Designation']} : {target_details['Quantite_Dispo']} pcs | Demandé : {quantite_a_deduire} pcs)")
+                code_art = dict_menu[item_choisi]
+                item_details = df_global[df_global['Code_Article'] == code_art].iloc[0]
+                if quantite > item_details['Quantite_Dispo']:
+                    st.error("❌ Stock insuffisant !")
                 else:
                     total_net = (quantite * item_details['Prix_Vente_FCFA']) * (1 - (opt_remise / 100))
-                    
                     nouvelle_ligne = pd.DataFrame([{
-                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                        'Table': table_choisie, 
-                        'Code_Article': code_art_fini, 
-                        'Code_Matiere_Stock': code_article_a_deduire, 
-                        'Type_Flux': 'Sortie', 
-                        'Quantite': quantite_a_deduire, 
-                        'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
-                        'Remise_Pourcent': opt_remise, 
-                        'Accompagnement': accomp_choisi, 
-                        'Total_FCFA': total_net,
-                        'Motif_Remise': motif_remise, 
-                        'Statut': 'En cours', 
-                        'Ref_Bon': '-'
+                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': table_choisie, 'Code_Article': code_art,
+                        'Type_Flux': 'Sortie', 'Quantite': quantite, 'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
+                        'Remise_Pourcent': opt_remise, 'Accompagnement': accomp_choisi, 'Total_FCFA': total_net,
+                        'Motif_Remise': motif_remise, 'Statut': 'En cours', 'Ref_Bon': '-'
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
                     sauvegarder_ventes()
-                    st.success(f"Commande envoyée ! Plat enregistré : {item_details['Designation']} (Stock réduit de {quantite_a_deduire})")
+                    st.success("Commande enregistrée !")
                     st.rerun()
     with col2:
         st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
 
 # ==========================================
-# VUE 2 : COMMANDES & ADDITIONS
+# VUE 2 : COMMANDES ET ADDITIONS
 # ==========================================
 def vue_commandes_additions():
     st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
+    
     if st.session_state.historique_ventes.empty:
         st.info("Aucune commande dans le système.")
         return
 
     df_suivi = st.session_state.historique_ventes.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Categorie']], on='Code_Article', how='left')
     df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
+    
     tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général des Opérations"])
     
     with tabs_caisse[0]:
@@ -355,12 +248,10 @@ def vue_commandes_additions():
             df_table_strict = df_actives[df_actives['Table'] == table_selectionnee].copy()
             
             def formater_libelle(row):
-                designation = row['Designation'] if pd.notna(row['Designation']) else "Produit Inconnu"
-                if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans" and pd.notna(row['Accompagnement']):
-                    return f"{designation} (+ {row['Accompagnement']})"
-                return designation
+                if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans accompagnement":
+                    return f"{row['Designation']} (+ {row['Accompagnement']})"
+                return row['Designation']
                 
-            # CORRECTION ICI : Parenthèse fermée proprement pour corriger l'erreur de l'image
             df_table_strict['Désignation Produit'] = df_table_strict.apply(formater_libelle, axis=1)
             
             st.dataframe(df_table_strict[['Heure', 'Categorie', 'Désignation Produit', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Total_FCFA']], use_container_width=True, hide_index=True)
@@ -368,16 +259,18 @@ def vue_commandes_additions():
             st.markdown(f"## **Total Net à Payer : {total_addition:,.0f} FCFA**")
             
             col_btn1, col_btn2 = st.columns(2)
-            if col_btn1.button(f"Encaisser la {table_selectionnee} 💰", type="primary"):
+            if col_btn1.button(f"Encaisser et Clôturer la {table_selectionnee} 💰", type="primary"):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
+                
                 sauvegarder_ventes()
-                st.success(f"La {table_selectionnee} a été réglée !")
+                st.success(f"La {table_selectionnee} a été validée !")
                 st.rerun()
                 
-            if col_btn2.button(f"Annuler la {table_selectionnee} ❌"):
+            if col_btn2.button(f"Annuler l'addition de la {table_selectionnee} ❌"):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
+                
                 sauvegarder_ventes()
                 st.warning(f"Commandes annulées.")
                 st.rerun()
@@ -386,28 +279,23 @@ def vue_commandes_additions():
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
 
 # ==========================================
-# VUE 3 : STOCKS & APPROS
+# VUE 3 : STOCKS & APPROVISIONNEMENTS
 # ==========================================
 def vue_stocks_appro():
     st.subheader("📦 Gestion des Stocks & Bons d'Entrée")
-    tab_cuisine, tab_bar, tab_bons = st.tabs(["🍳 Stock CUISINE (Ingrédients)", "🍹 Stock BAR (Boissons)", "📄 Bons d'Entrée Valorisés"])
+    tab_cuisine, tab_bar, tab_bons = st.tabs(["🍳 Stock CUISINE", "🍹 Stock BAR", "📄 Bons d'Entrée Valorisés"])
     
     with tab_cuisine:
-        df_cuisine_brut = df_global[df_global['Categorie'] == 'Cuisine'].copy()
-        df_cuisine = df_cuisine_brut[df_cuisine_brut['Designation'].str.upper().str.strip().isin(MATIERES_PREMIERES_CIBLES)]
-        
-        if df_cuisine.empty:
-            st.info("Aucune matière première brute n'est détectée dans votre base de données cuisine.")
-        else:
-            st.dataframe(df_cuisine[['Code_Article', 'Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum']], use_container_width=True, hide_index=True)
+        df_cuisine = df_global[df_global['Categorie'] == 'Cuisine']
+        st.dataframe(df_cuisine[['Code_Article', 'Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Vente_FCFA']], use_container_width=True, hide_index=True)
         
         with st.expander("📥 Enregistrer un Achat / Approvisionnement Cuisine"):
             if df_cuisine.empty:
-                st.info("Configurez d'abord vos matières premières dans l'onglet Configuration Carte.")
+                st.info("Aucun article Cuisine configuré.")
             else:
                 with st.form("form_appro_cuisine", clear_on_submit=True):
                     dict_cuisine = {r['Designation']: r['Code_Article'] for _, r in df_cuisine.iterrows()}
-                    art_choisi = st.selectbox("Ingrédient Cuisine reçu :", list(dict_cuisine.keys()))
+                    art_choisi = st.selectbox("Article Cuisine reçu :", list(dict_cuisine.keys()))
                     qte_recue = st.number_input("Quantité achetée :", min_value=1, value=10)
                     px_achat_unit = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=1000)
                     fournisseur = st.text_input("Nom du Fournisseur :", value="Grossiste Marché")
@@ -418,11 +306,12 @@ def vue_stocks_appro():
                         
                         ligne_appro = pd.DataFrame([{
                             'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 'Code_Article': code_r,
-                            'Code_Matiere_Stock': code_r, 'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
+                            'Type_Flux': 'Réappro', 'Quantite': qte_recue, 'Prix_Unitaire_Flux': px_achat_unit,
                             'Remise_Pourcent': 0, 'Accompagnement': '-', 
                             'Total_FCFA': qte_recue * px_achat_unit, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
                         }])
                         st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
+                        
                         idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
                         st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit
                         
@@ -433,7 +322,7 @@ def vue_stocks_appro():
                         sauvegarder_ventes()
                         sauvegarder_menu()
                         sauvegarder_bons()
-                        st.success(f"Bon {ref_bon} enregistré !")
+                        st.success(f"Bon {ref_bon} mis à jour !")
                         st.rerun()
 
     with tab_bar:
@@ -457,11 +346,12 @@ def vue_stocks_appro():
                         
                         ligne_appro = pd.DataFrame([{
                             'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_BAR', 'Code_Article': code_r,
-                            'Code_Matiere_Stock': code_r, 'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
+                            'Type_Flux': 'Réappro', 'Quantite': qte_recue_bar, 'Prix_Unitaire_Flux': px_achat_unit_bar,
                             'Remise_Pourcent': 0, 'Accompagnement': '-', 
                             'Total_FCFA': qte_recue_bar * px_achat_unit_bar, 'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
                         }])
                         st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
+                        
                         idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code_r].index
                         st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit_bar
                         
@@ -516,13 +406,15 @@ def vue_stocks_appro():
 def vue_finances_marges():
     st.subheader("📊 Compte d'Exploitation & Rentabilité Réelle")
     df_ventes_payees = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
+    
     if df_ventes_payees.empty:
         st.info("Les données financières apparaîtront après les premiers encaissements.")
         return
         
     df_calc_marge = df_ventes_payees.groupby('Code_Article').agg({'Quantite': 'sum', 'Total_FCFA': 'sum'}).reset_index()
     df_calc_marge = df_calc_marge.merge(st.session_state.base_menu[['Code_Article', 'Designation', 'Prix_Achat_Moyen_FCFA']], on='Code_Article', how='left')
-    df_calc_marge['Cout_Total_Achat'] = df_calc_marge['Quantite'] * df_calc_marge['Prix_Achat_Moyen_FCFA'].fillna(0)
+    
+    df_calc_marge['Cout_Total_Achat'] = df_calc_marge['Quantite'] * df_calc_marge['Prix_Achat_Moyen_FCFA']
     df_calc_marge['Marge_Brute_FCFA'] = df_calc_marge['Total_FCFA'] - df_calc_marge['Cout_Total_Achat']
     
     ca_total = df_calc_marge['Total_FCFA'].sum()
@@ -536,7 +428,7 @@ def vue_finances_marges():
     f3.metric("Marge Réelle nette", f"{marge_globale:,.0f} FCFA", delta=f"{taux_marge_global:.1f}% de marge")
 
 # ==========================================
-# VUE 5 : CLÔTURE DE CAISSE
+# 🔒 VUE 5 : CLÔTURE DE CAISSE
 # ==========================================
 def vue_cloture_caisse():
     st.subheader("🔒 Clôture Journalière & Génération du Z de Caisse")
@@ -562,32 +454,40 @@ def vue_cloture_caisse():
         st.warning(f"⚠️ **Clôture impossible :** Il reste **{len(df_jour_en_cours)} table(s) en cours** non soldée(s).")
         return
 
+    st.info("💡 Saisissez le montant physique versé. Le système calculera automatiquement l'écart s'il y a lieu.")
+    
     col_input1, col_input2 = st.columns(2)
     with col_input1:
         montant_verse = st.number_input("💵 MONTANT RÉELLEMENT VERSÉ (FCFA) :", min_value=0, value=int(ca_brut), step=500, key="cloture_verse")
         fond_de_caisse = st.number_input("Montant de fond de caisse laissé (FCFA) :", min_value=0, value=15000, key="cloture_fond")
+    
     with col_input2:
         nom_caissier = st.text_input("Nom du caissier responsable :", value=st.session_state.nom_utilisateur, key="cloture_user")
         remarques = st.text_area("Observations / Raisons de l'écart éventuel :", key="cloture_obs")
 
     ecart_caisse = montant_verse - ca_brut
+    
     if ecart_caisse == 0:
-        st.success("✅ Caisse Parfaite !")
+        st.success("✅ Caisse Parfaite : Le montant versé correspond à la recette attendue.")
     elif ecart_caisse > 0:
-        st.warning(f"📈 Excédent de Caisse : +{ecart_caisse:,.0f} FCFA")
+        st.warning(f"📈 Excédent de Caisse détecté : +{ecart_caisse:,.0f} FCFA (Plus d'argent versé que prévu).")
     else:
-        st.error(f"📉 Déficit de Caisse : {ecart_caisse:,.0f} FCFA")
+        st.error(f"📉 Déficit de Caisse détecté : {ecart_caisse:,.0f} FCFA (Manquant par rapport au système).")
 
     check_verrou = st.checkbox("Je certifie l'exactitude des montants comptés et du versement.", key="cloture_check")
     
     if st.button("🔒 Générer, Imprimer & Archiver le Z de Caisse", type="primary", use_container_width=True):
-        if not nom_caissier or not check_verrou:
-            st.error("❌ Veuillez saisir le nom du caissier et cocher la case de certification avant de clore.")
+        if not nom_caissier:
+            st.error("❌ Erreur : Veuillez renseigner le nom du caissier avant de valider.")
+        elif not check_verrou:
+            st.error("❌ Erreur : Vous devez cocher la case de certification.")
         else:
             ref_z = f"Z-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-            nouveau_z = pd.DataFrame([{
+            date_courante = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            nouvel_index_z = pd.DataFrame([{
                 'Ref_Z': ref_z,
-                'Date_Cloture': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'Date_Cloture': date_courante,
                 'Caissier': nom_caissier,
                 'Recette_Encaissee': ca_brut,
                 'Montant_Verse': montant_verse,
@@ -595,21 +495,60 @@ def vue_cloture_caisse():
                 'Articles_Vendus': nb_couverts,
                 'Tables_Servies': nb_tables,
                 'Fond_De_Caisse': fond_de_caisse,
-                'Observations': remarques
+                'Observations': remarques if remarques else "Aucune"
             }])
-            
-            st.session_state.historique_z = pd.concat([st.session_state.historique_z, nouveau_z], ignore_index=True)
+            st.session_state.historique_z = pd.concat([st.session_state.historique_z, nouvel_index_z], ignore_index=True)
             sauvegarder_z_historique()
             
-            st.success(f"Le Z de caisse {ref_z} a été archivé avec succès !")
-            st.dataframe(nouveau_z, use_container_width=True, hide_index=True)
+            color_ecart = "green" if ecart_caisse >= 0 else "red"
+            
+            ticket_html = f"""
+            <div id="thermal-z-ticket" style="border:1px dashed #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:auto; font-size:13px; line-height:1.2;">
+                <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
+                <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">TICKET Z DE CLÔTURE</h4>
+                <p><b>REF TICKET :</b> {ref_z}</p>
+                <p><b>DATE      :</b> {date_courante}</p>
+                <p><b>CAISSIER :</b> {nom_caissier}</p>
+                <hr style="border-top: 1px dashed #000; margin:10px 0;">
+                <table style="width:100%; font-size:13px;">
+                    <tr><td>RECETTE ATTENDUE:</td><td style="text-align:right;">{ca_brut:,.0f} F</td></tr>
+                    <tr><td>MONTANT VERSÉ :</td><td style="text-align:right; font-weight:bold;">{montant_verse:,.0f} F</td></tr>
+                    <tr><td>ÉCART CAISSE   :</td><td style="text-align:right; font-weight:bold; color:{color_ecart};">{ecart_caisse:,.0f} F</td></tr>
+                    <tr><td colspan="2"><hr style="border-top: 1px dashed #aaa;"></td></tr>
+                    <tr><td>ARTICLES VENDUS:</td><td style="text-align:right;">{nb_couverts} pcs</td></tr>
+                    <tr><td>TABLES CLÔTURE :</td><td style="text-align:right;">{nb_tables}</td></tr>
+                    <tr><td>PANIER MOYEN   :</td><td style="text-align:right;">{panier_moyen:,.0f} F</td></tr>
+                    <tr><td>FOND DE CAISSE :</td><td style="text-align:right;">{fond_de_caisse:,.0f} F</td></tr>
+                </table>
+                <hr style="border-top: 1px dashed #000; margin:10px 0;">
+                <p><b>OBSERVATIONS :</b><br>{remarques if remarques else 'Aucune'}</p>
+                <hr style="border-top: 1px dashed #000; margin:10px 0;">
+                <h4 style="text-align:center; margin:10px 0 0 0;">FIN DE SERVICE ARCHIVÉE</h4>
+            </div>
+            """
+            
+            st.success(f"🎉 Le rapport numérique {ref_z} incluant le montant versé a bien été archivé !")
+            st.markdown("### 🖨️ Aperçu du Ticket avec Suivi des Versements")
+            st.markdown(ticket_html, unsafe_allow_html=True)
+            
+            js_print = f"""
+            <script>
+                var w = window.open('', '_blank', 'height=600,width=400');
+                w.document.write('<html><head><title>Imprimer Z de Caisse</title></head><body style="margin:10px;">');
+                w.document.write(`{ticket_html}`);
+                w.document.write('</body></html>');
+                w.document.close();
+                setTimeout(function() {{ w.print(); w.close(); }}, 300);
+            </script>
+            """
+            components.html(js_print, height=0, width=0)
 
 # ==========================================
-# VUE 6 : CONFIGURATION CARTE
+# VUE 6 : CONFIGURATION DE LA CARTE (CORRIGÉE)
 # ==========================================
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
-    action = st.radio("Sélectionnez une action :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit"])
+    action = st.radio("Sélectionnez une action :", ["➕ Ajouter un Nouveau Produit", "❌ Supprimer un Produit"])
     
     if action == "➕ Ajouter un Nouveau Produit":
         with st.form("form_ajout_produit", clear_on_submit=True):
@@ -620,208 +559,130 @@ def vue_configuration_carte():
             new_stock_min = c2.number_input("Stock Minimum :", min_value=1, value=5)
             new_prix_vente = c3.number_input("Prix de Vente (FCFA) :", min_value=0, value=1000)
             new_prix_achat = st.number_input("Prix d'Achat initial (FCFA) :", min_value=0, value=500)
-            
+       
             if st.form_submit_button("💾 Enregistrer le Produit"):
                 if new_designation:
-                    if len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']:
-                        st.session_state.base_menu = pd.DataFrame(columns=st.session_state.base_menu.columns)
-                    new_code = f"MENU{len(st.session_state.base_menu) + 1:03d}"
-                    nouvel_article = pd.DataFrame([{
-                        'Code_Article': new_code, 'Designation': new_designation, 'Categorie': new_categorie,
-                        'Stock_Initial': new_stock_init, 'Stock_Minimum': new_stock_min, 
-                        'Prix_Vente_FCFA': new_prix_vente, 'Prix_Achat_Moyen_FCFA': new_prix_achat
+                    # Génération automatique d'un code unique basé sur la taille du menu
+                    nouveau_code = f"PROD{len(st.session_state.base_menu) + 1:03d}"
+                    nouvelle_ligne = pd.DataFrame([{
+                        'Code_Article': nouveau_code,
+                        'Designation': new_designation,
+                        'Categorie': new_categorie,
+                        'Stock_Initial': new_stock_init,
+                        'Stock_Minimum': new_stock_min,
+                        'Prix_Vente_FCFA': new_prix_vente,
+                        'Prix_Achat_Moyen_FCFA': new_prix_achat
                     }])
-                    st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvel_article], ignore_index=True)
+                    st.session_state.base_menu = pd.concat([st.session_state.base_menu, nouvelle_ligne], ignore_index=True)
                     sauvegarder_menu()
-                    st.success("Article ajouté !")
-                    st.sidebar.empty()
+                    st.success(f"Article {new_designation} créé avec succès (Code: {nouveau_code}) !")
                     st.rerun()
-
-    elif action == "✏️ Modifier un Produit Existant":
-        if not st.session_state.base_menu.empty:
-            dict_edit = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
-            prod = st.selectbox("Produit :", list(dict_edit.keys()))
-            code = dict_edit[prod]
-            infos = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code].iloc[0]
-            
-            with st.form("form_edit"):
-                edit_name = st.text_input("Nom :", value=infos['Designation'])
-                edit_px = st.number_input("Prix de Vente :", min_value=0, value=int(infos['Prix_Vente_FCFA']))
-                if st.form_submit_button("Sauvegarder Changes"):
-                    idx = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] == code].index
-                    st.session_state.base_menu.loc[idx, 'Designation'] = edit_name
-                    st.session_state.base_menu.loc[idx, 'Prix_Vente_FCFA'] = edit_px
-                    sauvegarder_menu()
-                    st.success("Produit modifié avec succès !")
-                    st.rerun()
-
+                else:
+                    st.error("La désignation est obligatoire.")
+                    
     elif action == "❌ Supprimer un Produit":
-        if not st.session_state.base_menu.empty:
-            dict_del = {r['Designation']: r['Code_Article'] for _, r in st.session_state.base_menu.iterrows()}
-            prod_to_del = st.selectbox("Sélectionner le produit à effacer :", list(dict_del.keys()))
+        if st.session_state.base_menu.empty:
+            st.info("Aucun produit dans la carte.")
+        else:
+            liste_produits = st.session_state.base_menu['Designation'].tolist()
+            produit_a_supprimer = st.selectbox("Sélectionnez le produit à retirer :", liste_produits)
             
             if st.button("Supprimer définitivement 🗑️", type="primary"):
-                code_del = dict_del[prod_to_del]
-                st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Code_Article'] != code_del]
+                st.session_state.base_menu = st.session_state.base_menu[st.session_state.base_menu['Designation'] != produit_a_supprimer]
                 sauvegarder_menu()
-                st.success(f"'{prod_to_del}' a été retiré de la carte.")
+                st.success("Produit supprimé de la base.")
                 st.rerun()
 
 # ==========================================
 # 🔐 VUE 7 : VUE ADMINISTRATEUR (RÉSOUT LA NAMEERROR)
 # ==========================================
 def vue_administrateur():
-    st.subheader("🔐 Administration : Rôles, Sécurité & Maintenance")
+    st.subheader("🔐 Panel d'Administration")
+    st.write("Gestion globale des utilisateurs de la plateforme.")
     
-    tab_list, tab_add, tab_edit, tab_del, tab_logs, tab_purge = st.tabs([
-        "📋 Liste des Utilisateurs", 
-        "➕ Ajouter un Utilisateur", 
-        "✏️ Modifier Droits/Mots de Passe",
-        "❌ Supprimer un Compte",
-        "📁 Consultation Numérique des Z",
-        "🚨 Purges & Maintenance"
-    ])
+    tab_users, tab_db = st.tabs(["👥 Utilisateurs", "🗄️ Statut des Fichiers de Données"])
     
-    # 1. Liste des comptes
-    with tab_list:
-        st.write("Comptes configurés sur cette machine :")
-        st.dataframe(
-            st.session_state.base_utilisateurs[['Identifiant', 'Role']], 
-            use_container_width=True, 
-            hide_index=True
-        )
+    with tab_users:
+        st.markdown("### Liste des Comptes actifs")
+        st.dataframe(st.session_state.base_utilisateurs, use_container_width=True, hide_index=True)
         
-    # 2. Création de compte
-    with tab_add:
-        with st.form("form_creer_user", clear_on_submit=True):
-            new_id = st.text_input("Identifiant / Nom de l'employé :").strip()
-            new_pwd = st.text_input("Mot de passe :", type="password")
-            new_role = st.selectbox("Attribuer un Rôle :", ["Serveur", "Responsable Caisse", "Administrateur"])
-            
-            if st.form_submit_button("Créer le compte utilisateur 💾"):
-                if not new_id or not new_pwd:
-                    st.error("Champs obligatoires manquants.")
-                elif new_id in st.session_state.base_utilisateurs['Identifiant'].values:
-                    st.error("Cet identifiant existe déjà.")
-                else:
-                    nouvel_u = pd.DataFrame([{'Identifiant': new_id, 'Mot_De_Passe': new_pwd, 'Role': new_role}])
-                    st.session_state.base_utilisateurs = pd.concat([st.session_state.base_utilisateurs, nouvel_u], ignore_index=True)
-                    sauvegarder_utilisateurs()
-                    st.success(f"Compte pour **{new_id}** configuré avec succès !")
-                    st.rerun()
-                    
-    # 3. Modification (Rôle ou Mot de passe)
-    with tab_edit:
-        users_list = st.session_state.base_utilisateurs['Identifiant'].tolist()
-        selected_u = st.selectbox("Choisir l'utilisateur à modifier :", users_list)
-        info_u = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] == selected_u].iloc[0]
-        
-        with st.form("form_edit_user"):
-            edit_pwd = st.text_input("Nouveau mot de passe (Laisser identique si inchangé) :", value=info_u['Mot_De_Passe'], type="password")
-            edit_role = st.selectbox("Nouveau Rôle :", ["Serveur", "Responsable Caisse", "Administrateur"], index=["Serveur", "Responsable Caisse", "Administrateur"].index(info_u['Role']))
-            
-            if st.form_submit_button("Mettre à jour les accès 🔄"):
-                idx = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] == selected_u].index
-                st.session_state.base_utilisateurs.loc[idx, 'Mot_De_Passe'] = edit_pwd
-                st.session_state.base_utilisateurs.loc[idx, 'Role'] = edit_role
-                sauvegarder_utilisateurs()
-                st.success("Modifications enregistrées.")
-                st.rerun()
+        with st.expander("➕ Ajouter un nouvel utilisateur"):
+            with st.form("form_user"):
+                new_id = st.text_input("Identifiant / Login :")
+                new_mdp = st.text_input("Mot de passe :", type="password")
+                new_role = st.selectbox("Rôle d'accès :", ["Serveur", "Responsable Caisse", "Administrateur"])
                 
-    # 4. Suppression de compte
-    with tab_del:
-        users_to_del = st.session_state.base_utilisateurs['Identifiant'].tolist()
-        del_target = st.selectbox("Sélectionner le compte à supprimer :", users_to_del)
-        
-        if st.button("Confirmer la suppression définitive 🗑️", type="primary"):
-            target_role = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] == del_target].iloc[0]['Role']
-            nb_admins = len(st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Role'] == 'Administrateur'])
-            
-            if del_target == st.session_state.nom_utilisateur:
-                st.error("Vous ne pouvez pas supprimer votre propre compte en cours de session.")
-            elif target_role == "Administrateur" and nb_admins <= 1:
-                st.error("Action impossible. Le système requiert au moins un compte Administrateur actif.")
-            else:
-                st.session_state.base_utilisateurs = st.session_state.base_utilisateurs[st.session_state.base_utilisateurs['Identifiant'] != del_target]
-                sauvegarder_utilisateurs()
-                st.success(f"Compte de {del_target} supprimé.")
-                st.rerun()
+                if st.form_submit_button("Créer le compte"):
+                    if new_id and new_mdp:
+                        if new_id in st.session_state.base_utilisateurs['Identifiant'].values:
+                            st.error("Cet identifiant existe déjà.")
+                        else:
+                            new_u = pd.DataFrame([{'Identifiant': new_id, 'Mot_De_Passe': new_mdp, 'Role': new_role}])
+                            st.session_state.base_utilisateurs = pd.concat([st.session_state.base_utilisateurs, new_u], ignore_index=True)
+                            sauvegarder_utilisateurs()
+                            st.success(f"Compte {new_id} opérationnel !")
+                            st.rerun()
+                    else:
+                        st.error("Tous les champs sont requis.")
+                        
+    with tab_db:
+        st.markdown("### Emplacement des bases locales (.csv)")
+        st.info(f"📁 **Dossier racine d'exploitation :** `{DOSSIER_EXPLOITATION}`")
+        st.write(f"- Menu : `{CSV_MENU}`")
+        st.write(f"- Flux de Ventes : `{CSV_VENTES}`")
+        st.write(f"- Clôtures Historiques : `{CSV_Z_HISTORIQUE}`")
 
-    # 5. ANCIEN CODE INTÉGRÉ : Consultation Numérique des Z
-    with tab_logs:
-        st.write("Retrouvez ci-dessous l'intégralité des clôtures de caisse (Rapports Z) enregistrées numériquement.")
-        if st.session_state.historique_z.empty:
-            st.info("Aucun rapport Z n'a encore été archivé numériquement dans le système.")
-        else:
-            st.dataframe(st.session_state.historique_z.sort_index(ascending=False), use_container_width=True, hide_index=True)
-            st.markdown("---")
-            st.markdown("### 🔎 Inspecter & Réimprimer un Duplicata")
+# ==========================================
+# 8. SYSTÈME CENTRAL DE ROUTAGE & NAVIGATION
+# ==========================================
+if not st.session_state.authentifie:
+    # Formulaire d'authentification épuré
+    st.markdown("<h2 style='text-align: center;'>EASYGEST RESTO PRO+</h2>", unsafe_allow_html=True)
+    col_login, _ = st.columns([1, 1])
+    with col_login:
+        with st.form("auth_form"):
+            st.markdown("### 🔐 Connexion à votre Session")
+            u_input = st.text_input("Identifiant :")
+            p_input = st.text_input("Mot de passe :", type="password")
             
-            liste_z = st.session_state.historique_z['Ref_Z'].tolist()[::-1]
-            z_choisi = st.selectbox("Sélectionnez la référence du rapport Z à analyser :", liste_z)
-            
-            infos_z = st.session_state.historique_z[st.session_state.historique_z['Ref_Z'] == z_choisi].iloc[0]
-            
-            ticket_reconstruit = f"""
-            <div style="border:1px solid #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:10px auto; font-size:13px; line-height:1.2;">
-                <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
-                <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">DUPLICATA TICKET Z</h4>
-                <p><b>REF TICKET :</b> {infos_z['Ref_Z']}</p>
-                <p><b>DATE CLÔTURE:</b> {infos_z['Date_Cloture']}</p>
-                <p><b>CAISSIER    :</b> {infos_z['Caissier']}</p>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <table style="width:100%; font-size:13px;">
-                    <tr><td>RECETTE COLLECTÉE:</td><td style="text-align:right; font-weight:bold;">{float(infos_z['Recette_Encaissee']):,.0f} F</td></tr>
-                    <tr><td>ARTICLES VENDUS  :</td><td style="text-align:right;">{infos_z['Articles_Vendus']} pcs</td></tr>
-                    <tr><td>TABLES FACTURÉES :</td><td style="text-align:right;">{infos_z['Tables_Servies']}</td></tr>
-                    <tr><td>FOND DE CAISSE   :</td><td style="text-align:right;">{float(infos_z['Fond_De_Caisse']):,.0f} F</td></tr>
-                </table>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <p><b>OBSERVATIONS :</b><br>{infos_z['Observations']}</p>
-                <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <h4 style="text-align:center; margin:5px 0 0 0; font-size:11px; color:#555;">DUPLICATA SÉCURISÉ ADMIN</h4>
-            </div>
-            """
-            
-            col_z_1, col_z_2 = st.columns([1, 2])
-            with col_z_1:
-                st.markdown(ticket_reconstruit, unsafe_allow_html=True)
-            with col_z_2:
-                st.info("💡 Ce panneau vous permet de réimprimer un ticket à tout moment si le rouleau thermique de la caisse a subi une coupure ou une panne lors de la fermeture.")
-                if st.button("🖨️ Lancer la réimpression de ce Duplicata Z", type="secondary", use_container_width=True):
-                    js_reprint = f"""
-                    <script>
-                        var w = window.open('', '_blank', 'height=600,width=400');
-                        w.document.write('<html><head><title>Duplicata Z</title></head><body>');
-                        w.document.write(`{ticket_reconstruit}`);
-                        w.document.write('</body></html>');
-                        w.document.close();
-                        setTimeout(function() {{ w.print(); w.close(); }}, 300);
-                    </script>
-                    """
-                    components.html(js_reprint, height=0, width=0)
+            if st.form_submit_button("Entrer dans l'application ➡️"):
+                df_u = st.session_state.base_utilisateurs
+                match = df_u[(df_u['Identifiant'] == u_input) & (df_u['Mot_De_Passe'] == p_input)]
+                if not match.empty:
+                    st.session_state.authentifie = True
+                    st.session_state.nom_utilisateur = match.iloc[0]['Identifiant']
+                    st.session_state.role_utilisateur = match.iloc[0]['Role']
+                    st.success("Connexion réussie !")
+                    st.rerun()
+                else:
+                    st.error("Identifiants incorrects.")
+else:
+    # Barre latérale dynamique
+    st.sidebar.title("Menu principal")
+    st.sidebar.write("Navigation :")
+    
+    options_dispo = OPTIONS_PAR_ROLE.get(st.session_state.role_utilisateur, [" Prise de Commande"])
+    choix_vue = st.sidebar.radio("Aller à :", options_dispo)
+    
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Déconnexion", type="secondary"):
+        st.session_state.authentifie = False
+        st.session_state.role_utilisateur = None
+        st.session_state.nom_utilisateur = None
+        st.rerun()
 
-    # 6. ANCIEN CODE INTÉGRÉ : Purges & Maintenance
-    with tab_purge:
-        if st.checkbox("Activer l'option de réinitialisation générale du journal"):
-            if st.button("🚨 VIDER LE JOURNAL DES OPÉRATIONS", type="primary"):
-                st.session_state.historique_ventes = pd.DataFrame(columns=['Heure', 'Table', 'Code_Article', 'Type_Flux', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Accompagnement', 'Total_FCFA', 'Motif_Remise', 'Statut', 'Ref_Bon'])
-                st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
-                st.rerun()
-# ==========================================
-# AIGUILLAGE DES VUES (LOGIQUE DE ROUTAGE)
-# ==========================================
-if choix_vue == "📝 Prise de Commande":
-    vue_prise_commande()
-elif choix_vue == "🧾 Commandes & Additions":
-    vue_commandes_additions()
-elif choix_vue == "📦 Stocks & Approvisionnements":
-    vue_stocks_appro()
-elif choix_vue == "📊 Finances & Marges":
-    vue_finances_marges()
-elif choix_vue == "🔒 Clôture de Caisse":
-    vue_cloture_caisse()
-elif choix_vue == "⚙️ Configuration Carte":
-    vue_configuration_carte()
-elif choix_vue == "🔐 Administrateur":
-    vue_administrateur()
+    # Routage strict vers les fonctions d'affichage
+    if choix_vue == "📝 Prise de Commande":
+        vue_prise_commande()
+    elif choix_vue == "🧾 Commandes & Additions":
+        vue_commandes_additions()
+    elif choix_vue == "📦 Stocks & Approvisionnements":
+        vue_stocks_appro()
+    elif choix_vue == "📊 Finances & Marges":
+        vue_finances_marges()
+    elif choix_vue == "🔒 Clôture de Caisse":
+        vue_cloture_caisse()
+    elif choix_vue == "⚙️ Configuration Carte":
+        vue_configuration_carte()
+    elif choix_vue == "🔐 Administrateur":
+        vue_administrateur()
