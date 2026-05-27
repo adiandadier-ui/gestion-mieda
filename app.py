@@ -442,6 +442,7 @@ def vue_stocks_appro():
                 </script>
                 """
                 components.html(js_script, height=0, width=0)
+                
 def vue_finances_marges():
     st.subheader("📊 Rentabilité & Chiffre d'Affaires")
     df_payes = st.session_state.historique_ventes[(st.session_state.historique_ventes['Type_Flux'] == 'Sortie') & (st.session_state.historique_ventes['Statut'] == 'Payé')]
