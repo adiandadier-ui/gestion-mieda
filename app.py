@@ -552,117 +552,91 @@ def vue_cloture_caisse():
         else:
             st.error(f"📉 Manquant de caisse détecté : **{ecart:,.0f} FCFA**")
 
-    # =========================================================================
-    # NOUVEAU VOLET CORRIGÉ : UTILISATION DIRECTE DE LA DÉSIGNATION DU JOURNAL
-    # =========================================================================
-    st.markdown("---")
-    st.subheader("📊 Rapport Général des Ventes par Article")
-
+    # PREPARATION DE LA SYNTHÈSE DES VENTES POUR L'IMPRESSION GLOBALISÉE
+    df_synthese = pd.DataFrame(columns=['Article', 'Quantite_Vendue', 'Chiffre_Affaires'])
     if not df_jour_paye.empty:
-        # Sécurité : On identifie la colonne de nommage de l'article présente dans le journal
         if 'Designation' in df_jour_paye.columns:
             col_reference = 'Designation'
         elif 'Article' in df_jour_paye.columns:
             col_reference = 'Article'
         else:
-            col_reference = 'Code_Article' # Repli technique si aucune colonne texte n'est trouvée
+            col_reference = 'Code_Article'
 
-        # Création d'une colonne unifiée propre pour l'affichage
         df_jour_paye['Article_Affichage'] = df_jour_paye[col_reference].fillna("Article Inconnu")
 
-        # Groupement et agrégation des ventes directement par le nom / désignation
         df_synthese = df_jour_paye.groupby('Article_Affichage').agg(
             Quantite_Vendue=('Quantite', 'sum'),
             Chiffre_Affaires=('Total_FCFA', 'sum')
         ).reset_index()
         
-        # Renommage pour l'esthétique du tableau
         df_synthese = df_synthese.rename(columns={'Article_Affichage': 'Article'})
-        
-        # Tri du plus vendu au moins vendu
         df_synthese = df_synthese.sort_values(by='Quantite_Vendue', ascending=False)
 
-        # Affichage du tableau formaté sur l'écran Streamlit
-        st.dataframe(
-            df_synthese.style.format({'Quantite_Vendue': '{:,.0f}', 'Chiffre_Affaires': '{:,.0f} F'}),
-            use_container_width=True,
-            hide_index=True
-        )
-
-        # Génération du HTML pour l'impression thermique ou papier standard incluant l'écart
-        date_str = datetime.now().strftime('%d/%m/%Y à %H:%M')
-        lignes_html = ""
-        for _, row in df_synthese.iterrows():
-            lignes_html += f"""
-            <tr>
-                <td style='padding: 5px 0;'>{row['Article']}</td>
-                <td style='text-align: center;'>{int(row['Quantite_Vendue'])}</td>
-                <td style='text-align: right;'>{int(row['Chiffre_Affaires']):,} F</td>
-            </tr>
-            """
-
-        # Formatage textuel de l'éventuel écart pour le ticket d'impression
-        statut_ecart_html = "CORRECT" if ecart == 0 else f"{ecart:+,2.0f} F"
-
-        html_print = f"""
-        <html>
-        <head>
-            <style>
-                @page {{ size: auto; margin: 5mm; }}
-                body {{ font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #000; line-height: 1.2; }}
-                .text-center {{ text-align: center; }}
-                .bold {{ font-weight: bold; }}
-                .divider {{ border-top: 1px dashed #000; margin: 10px 0; }}
-                table {{ width: 100%; border-collapse: collapse; }}
-            </style>
-        </head>
-        <body>
-            <div class='text-center bold' style='font-size: 16px;'>RAPPORT Z - ARTICLES VENDUS</div>
-            <div class='text-center'>Date: {date_str}</div>
-            <div class='divider'></div>
-            
-            <div class='bold'>RÉSUMÉ SYSTÈME & CAISSE :</div>
-            <table style='margin-bottom: 5px;'>
-                <tr><td>Recette système :</td><td style='text-align: right;' class='bold'>{ca_brut:,.0f} F</td></tr>
-                <tr><td>Espèces physique :</td><td style='text-align: right;'>{especes_physiques:,.0f} F</td></tr>
-                <tr><td class='bold'>Écart de caisse :</td><td style='text-align: right;' class='bold'>{statut_ecart_html}</td></tr>
-                <tr><td>Articles vendus :</td><td style='text-align: right;'>{nb_couverts} pcs</td></tr>
-                <tr><td>Tables servies :</td><td style='text-align: right;'>{nb_tables}</td></tr>
-            </table>
-            
-            <div class='divider'></div>
-            <div class='bold' style='margin-bottom: 5px;'>DÉTAIL DES VENTES :</div>
-            <table>
-                <thead>
-                    <tr style='border-bottom: 1px solid #000;'>
-                        <th style='text-align: left; padding-bottom: 3px;'>Article</th>
-                        <th style='text-align: center; padding-bottom: 3px;'>Qté</th>
-                        <th style='text-align: right; padding-bottom: 3px;'>Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {lignes_html}
-                </tbody>
-            </table>
-            <div class='divider'></div>
-            <div class='text-center bold' style='margin-top: 15px;'>--- FIN DE RAPPORT ---</div>
-        </body>
-        </html>
+    # Construction du contenu d'impression partagé
+    date_str = datetime.now().strftime('%d/%m/%Y à %H:%M')
+    lignes_html = ""
+    for _, row in df_synthese.iterrows():
+        lignes_html += f"""
+        <tr>
+            <td style='padding: 5px 0;'>{row['Article']}</td>
+            <td style='text-align: center;'>{int(row['Quantite_Vendue'])}</td>
+            <td style='text-align: right;'>{int(row['Chiffre_Affaires']):,} F</td>
+        </tr>
         """
 
-        # Bouton d'impression utilisant les composants natifs injectés
-        if st.button("🖨️ Imprimer le Détail des Articles", type="secondary"):
-            js_print = f"""
-            <script>
-                var w = window.open();
-                w.document.write(`{html_print}`);
-                w.document.close();
-                setTimeout(function() {{ w.print(); w.close(); }}, 300);
-            </script>
-            """
-            components.html(js_print, height=0, width=0)
-    else:
-        st.info("Aucune vente validée et payée pour le moment pour cette journée.")
+    statut_ecart_html = "CORRECT" if ecart == 0 else f"{ecart:+,2.0f} F"
+
+    html_print = f"""
+    <html>
+    <head>
+        <style>
+            @page {{ size: auto; margin: 5mm; }}
+            body {{ font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #000; line-height: 1.2; }}
+            .text-center {{ text-align: center; }}
+            .bold {{ font-weight: bold; }}
+            .divider {{ border-top: 1px dashed #000; margin: 10px 0; }}
+            table {{ width: 100%; border-collapse: collapse; }}
+        </style>
+    </head>
+    <body>
+        <div class='text-center bold' style='font-size: 16px;'>RAPPORT Z - CLÔTURE DE CAISSE</div>
+        <div class='text-center'>Date: {date_str}</div>
+        <div class='divider'></div>
+        
+        <div class='bold'>RÉSUMÉ SYSTÈME & CAISSE :</div>
+        <table style='margin-bottom: 5px;'>
+            <tr><td>Recette système :</td><td style='text-align: right;' class='bold'>{ca_brut:,.0f} F</td></tr>
+            <tr><td>Espèces physique :</td><td style='text-align: right;'>{especes_physiques:,.0f} F</td></tr>
+            <tr><td class='bold'>Écart de caisse :</td><td style='text-align: right;' class='bold'>{statut_ecart_html}</td></tr>
+            <tr><td>Articles vendus :</td><td style='text-align: right;'>{nb_couverts} pcs</td></tr>
+            <tr><td>Tables servies :</td><td style='text-align: right;'>{nb_tables}</td></tr>
+            <tr><td>Panier moyen :</td><td style='text-align: right;'>{panier_moyen:,.0f} F</td></tr>
+        </table>
+        
+        <div class='divider'></div>
+        <div class='bold' style='margin-bottom: 5px;'>DÉTAIL DES VENTES :</div>
+        <table>
+            <thead>
+                <tr style='border-bottom: 1px solid #000;'>
+                    <th style='text-align: left; padding-bottom: 3px;'>Article</th>
+                    <th style='text-align: center; padding-bottom: 3px;'>Qté</th>
+                    <th style='text-align: right; padding-bottom: 3px;'>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {lignes_html if lignes_html != "" else "<tr><td colspan='3' style='text-align:center;'>Aucune vente</td></tr>"}
+            </tbody>
+        </table>
+        <div class='divider'></div>
+        <div class='text-center bold' style='margin-top: 15px;'>--- FIN DE RAPPORT Z ---</div>
+    </body>
+    </html>
+    """
+
+    # Insertion du bouton principal d'impression du Z global sous les bandeaux d'écarts
+    with col_ecart2:
+        st.write("") # Calage espace vertical
+        if st.button("🖨️
 
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
