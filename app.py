@@ -526,25 +526,55 @@ def vue_cloture_caisse():
     if not df_jour_en_cours.empty:
         st.warning(f"⚠️ **Attention :** Il reste des tables ouvertes non payées.")
 
+    def vue_cloture_caisse():
+    st.subheader("🔒 Clôture Journalière & Génération du Z de Caisse")
+    st.write(f"Date d'activité : **{datetime.now().strftime('%d/%m/%Y')}**")
+    st.markdown("---")
+    
+    df_v = st.session_state.historique_ventes
+    df_jour_paye = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'Payé')].copy()
+    df_jour_en_cours = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'En cours')].copy()
+    
+    ca_brut = df_jour_paye['Total_FCFA'].sum() if not df_jour_paye.empty else 0
+    nb_couverts = int(df_jour_paye['Quantite'].sum()) if not df_jour_paye.empty else 0
+    nb_tables = df_jour_paye['Table'].nunique() if not df_jour_paye.empty else 0
+    panier_moyen = ca_brut / nb_tables if nb_tables > 0 else 0
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Recette Attendue Système (FCFA)", f"{ca_brut:,.0f} F")
+    c2.metric("Total Articles Vendus", f"{nb_couverts} pcs")
+    c3.metric("Nombre de Tables Servies", f"{nb_tables}")
+    c4.metric("Panier Moyen / Table", f"{panier_moyen:,.0f} F")
+    
+    if not df_jour_en_cours.empty:
+        st.warning(f"⚠️ **Attention :** Il reste des tables ouvertes non payées.")
+
     # =========================================================================
-    # NOUVEAU VOLET : IMPRESSION DU DÉTAIL DES ARTICLES VENDUS DE LA JOURNÉE
+    # NOUVEAU VOLET CORRIGÉ : UTILISATION DIRECTE DE LA DÉSIGNATION DU JOURNAL
     # =========================================================================
     st.markdown("---")
     st.subheader("📊 Rapport Général des Ventes par Article")
 
     if not df_jour_paye.empty:
-        # Récupération de la désignation via la base menu si elle existe, sinon utilise le Code_Article
-        if 'base_menu' in st.session_state and not st.session_state.base_menu.empty:
-            dict_noms = dict(zip(st.session_state.base_menu['Code_Article'], st.session_state.base_menu['Designation']))
-            df_jour_paye['Article'] = df_jour_paye['Code_Article'].map(dict_noms).fillna(df_jour_paye['Code_Article'])
+        # Sécurité : On identifie la colonne de nommage de l'article présente dans le journal
+        if 'Designation' in df_jour_paye.columns:
+            col_reference = 'Designation'
+        elif 'Article' in df_jour_paye.columns:
+            col_reference = 'Article'
         else:
-            df_jour_paye['Article'] = df_jour_paye['Code_Article']
+            col_reference = 'Code_Article' # Repli technique si aucune colonne texte n'est trouvée
 
-        # Groupement et agrégation des ventes par article
-        df_synthese = df_jour_paye.groupby('Article').agg(
+        # Création d'une colonne unifiée propre pour l'affichage
+        df_jour_paye['Article_Affichage'] = df_jour_paye[col_reference].fillna("Article Inconnu")
+
+        # Groupement et agrégation des ventes directement par le nom / désignation
+        df_synthese = df_jour_paye.groupby('Article_Affichage').agg(
             Quantite_Vendue=('Quantite', 'sum'),
             Chiffre_Affaires=('Total_FCFA', 'sum')
         ).reset_index()
+        
+        # Renommage pour l'esthétique du tableau
+        df_synthese = df_synthese.rename(columns={'Article_Affichage': 'Article'})
         
         # Tri du plus vendu au moins vendu
         df_synthese = df_synthese.sort_values(by='Quantite_Vendue', ascending=False)
