@@ -526,6 +526,106 @@ def vue_cloture_caisse():
     if not df_jour_en_cours.empty:
         st.warning(f"⚠️ **Attention :** Il reste des tables ouvertes non payées.")
 
+    # =========================================================================
+    # NOUVEAU VOLET : IMPRESSION DU DÉTAIL DES ARTICLES VENDUS DE LA JOURNÉE
+    # =========================================================================
+    st.markdown("---")
+    st.subheader("📊 Rapport Général des Ventes par Article")
+
+    if not df_jour_paye.empty:
+        # Récupération de la désignation via la base menu si elle existe, sinon utilise le Code_Article
+        if 'base_menu' in st.session_state and not st.session_state.base_menu.empty:
+            dict_noms = dict(zip(st.session_state.base_menu['Code_Article'], st.session_state.base_menu['Designation']))
+            df_jour_paye['Article'] = df_jour_paye['Code_Article'].map(dict_noms).fillna(df_jour_paye['Code_Article'])
+        else:
+            df_jour_paye['Article'] = df_jour_paye['Code_Article']
+
+        # Groupement et agrégation des ventes par article
+        df_synthese = df_jour_paye.groupby('Article').agg(
+            Quantite_Vendue=('Quantite', 'sum'),
+            Chiffre_Affaires=('Total_FCFA', 'sum')
+        ).reset_index()
+        
+        # Tri du plus vendu au moins vendu
+        df_synthese = df_synthese.sort_values(by='Quantite_Vendue', ascending=False)
+
+        # Affichage du tableau formaté sur l'écran Streamlit
+        st.dataframe(
+            df_synthese.style.format({'Quantite_Vendue': '{:,.0f}', 'Chiffre_Affaires': '{:,.0f} F'}),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # Génération du HTML pour l'impression thermique ou papier standard
+        date_str = datetime.now().strftime('%d/%m/%Y à %H:%M')
+        lignes_html = ""
+        for _, row in df_synthese.iterrows():
+            lignes_html += f"""
+            <tr>
+                <td style='padding: 5px 0;'>{row['Article']}</td>
+                <td style='text-align: center;'>{int(row['Quantite_Vendue'])}</td>
+                <td style='text-align: right;'>{int(row['Chiffre_Affaires']):,} F</td>
+            </tr>
+            """
+
+        html_print = f"""
+        <html>
+        <head>
+            <style>
+                @page {{ size: auto; margin: 5mm; }}
+                body {{ font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #000; line-height: 1.2; }}
+                .text-center {{ text-align: center; }}
+                .bold {{ font-weight: bold; }}
+                .divider {{ border-top: 1px dashed #000; margin: 10px 0; }}
+                table {{ width: 100%; border-collapse: collapse; }}
+            </style>
+        </head>
+        <body>
+            <div class='text-center bold' style='font-size: 16px;'>RAPPORT Z - ARTICLES VENDUS</div>
+            <div class='text-center'>Date: {date_str}</div>
+            <div class='divider'></div>
+            
+            <div class='bold'>RÉSUMÉ SYSTÈME :</div>
+            <table style='margin-bottom: 5px;'>
+                <tr><td>Recette brute :</td><td style='text-align: right;' class='bold'>{ca_brut:,.0f} F</td></tr>
+                <tr><td>Articles vendus :</td><td style='text-align: right;'>{nb_couverts} pcs</td></tr>
+                <tr><td>Tables servies :</td><td style='text-align: right;'>{nb_tables}</td></tr>
+                <tr><td>Panier moyen :</td><td style='text-align: right;'>{panier_moyen:,.0f} F</td></tr>
+            </table>
+            
+            <div class='divider'></div>
+            <div class='bold' style='margin-bottom: 5px;'>DÉTAIL DES VENTES :</div>
+            <table>
+                <thead>
+                    <tr style='border-bottom: 1px solid #000;'>
+                        <th style='text-align: left; padding-bottom: 3px;'>Article</th>
+                        <th style='text-align: center; padding-bottom: 3px;'>Qté</th>
+                        <th style='text-align: right; padding-bottom: 3px;'>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {lignes_html}
+                </tbody>
+            </table>
+            <div class='divider'></div>
+            <div class='text-center bold' style='margin-top: 15px;'>--- FIN DE RAPPORT ---</div>
+        </body>
+        </html>
+        """
+
+        # Bouton d'impression utilisant les composants natifs injectés
+        if st.button("🖨️ Imprimer le Détail des Articles", type="secondary"):
+            js_print = f"""
+            <script>
+                var w = window.open();
+                w.document.write(`{html_print}`);
+                w.document.close();
+                setTimeout(function() {{ w.print(); w.close(); }}, 300);
+            </script>
+            """
+            components.html(js_print, height=0, width=0)
+    else:
+        st.info("Aucune vente validée et payée pour le moment pour cette journée.")
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
     action = st.radio("Sélectionnez une action :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit"])
