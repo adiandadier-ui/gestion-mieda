@@ -827,44 +827,93 @@ def vue_administrateur():
             
             infos_z = st.session_state.historique_z[st.session_state.historique_z['Ref_Z'] == z_choisi].iloc[0]
             
+            # 1. Extraction et sécurisation des nouvelles variables (Espèces, Écart, Articles)
+            recette_sys = float(infos_z.get('Recette_Encaissee', 0))
+            especes_decl = float(infos_z.get('Especes_Physiques', recette_sys)) # Valeur par défaut si ancien Z
+            ecart_constate = float(infos_z.get('Ecart_Caisse', 0))
+            
+            # Formatage texte de l'écart pour le duplicata
+            if ecart_constate == 0:
+                html_ecart = "CORRECT"
+            else:
+                couleur_ecart = "#d9534f" if ecart_constate < 0 else "#5cb85c"
+                html_ecart = f"<span style='color:{couleur_ecart}; font-weight:bold;'>{ecart_constate:+,2.0f} F</span>"
+
+            # 2. Reconstitution dynamique des lignes d'articles vendus si sauvegardées, sinon fallback
+            html_lignes_articles = ""
+            if 'Detail_Articles' in infos_z and pd.notna(infos_z['Detail_Articles']) and infos_z['Detail_Articles'] != "":
+                # Si vous stockez le détail sous forme de chaîne structurée (ex: "Bière x5|Poulet x2")
+                segments = str(infos_z['Detail_Articles']).split('|')
+                for segment in segments:
+                    if 'x' in segment:
+                        parts = segment.split('x')
+                        nom_art = parts[0].strip()
+                        qte_art = parts[1].strip()
+                        html_lignes_articles += f"<tr><td style='padding:3px 0;'>{nom_art}</td><td style='text-align:center;'>{qte_art}</td><td style='text-align:right;'>-</td></tr>"
+            else:
+                # Fallback esthétique si aucun détail textuel n'a été enregistré sur cet ancien Z
+                html_lignes_articles = f"<tr><td style='padding:3px 0;'>Ventes globales</td><td style='text-align:center;'>{infos_z['Articles_Vendus']}</td><td style='text-align:right;'>{recette_sys:,.0f} F</td></tr>"
+
+            # 3. Structure du ticket reconstruit complet (Visuel Écran & Imprimante)
             ticket_reconstruit = f"""
             <div style="border:1px solid #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:10px auto; font-size:13px; line-height:1.2;">
                 <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
                 <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">DUPLICATA TICKET Z</h4>
-                <p><b>REF TICKET :</b> {infos_z['Ref_Z']}</p>
-                <p><b>DATE CLÔTURE:</b> {infos_z['Date_Cloture']}</p>
-                <p><b>CAISSIER    :</b> {infos_z['Caissier']}</p>
+                <p style="margin:3px 0;"><b>REF TICKET :</b> {infos_z['Ref_Z']}</p>
+                <p style="margin:3px 0;"><b>DATE CLÔTURE:</b> {infos_z['Date_Cloture']}</p>
+                <p style="margin:3px 0;"><b>CAISSIER    :</b> {infos_z.get('Caissier', 'Non spécifié')}</p>
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <table style="width:100%; font-size:13px;">
-                    <tr><td>RECETTE COLLECTÉE:</td><td style="text-align:right; font-weight:bold;">{float(infos_z['Recette_Encaissee']):,.0f} F</td></tr>
-                    <tr><td>ARTICLES VENDUS  :</td><td style="text-align:right;">{infos_z['Articles_Vendus']} pcs</td></tr>
-                    <tr><td>TABLES FACTURÉES :</td><td style="text-align:right;">{infos_z['Tables_Servies']}</td></tr>
-                    <tr><td>FOND DE CAISSE   :</td><td style="text-align:right;">{float(infos_z['Fond_De_Caisse']):,.0f} F</td></tr>
+                
+                <p style="margin:5px 0; font-weight:bold;">RÉSUMÉ SYSTÈME & CAISSE :</p>
+                <table style="width:100%; font-size:13px; margin-bottom:5px;">
+                    <tr><td>Recette Système:</td><td style="text-align:right; font-weight:bold;">{recette_sys:,.0f} F</td></tr>
+                    <tr><td>Espèces Réelles:</td><td style="text-align:right;">{especes_decl:,.0f} F</td></tr>
+                    <tr><td>Écart de Caisse:</td><td style="text-align:right;">{html_ecart}</td></tr>
+                    <tr><td>Articles Vendus:</td><td style="text-align:right;">{infos_z['Articles_Vendus']} pcs</td></tr>
+                    <tr><td>Tables Servies :</td><td style="text-align:right;">{infos_z['Tables_Servies']}</td></tr>
                 </table>
+                
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <p><b>OBSERVATIONS :</b><br>{infos_z['Observations']}</p>
+                <p style="margin:5px 0; font-weight:bold;">DÉTAIL DES ARTICLES :</p>
+                <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                    <thead>
+                        <tr style="border-bottom:1px solid #000;">
+                            <th style="text-align:left; padding-bottom:3px;">Article</th>
+                            <th style="text-align:center; padding-bottom:3px;">Qté</th>
+                            <th style="text-align:right; padding-bottom:3px;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {html_lignes_articles}
+                    </tbody>
+                </table>
+                
+                <hr style="border-top: 1px dashed #000; margin:10px 0;">
+                <p style="margin:3px 0;"><b>OBSERVATIONS :</b><br>{infos_z.get('Observations', 'Aucune')}</p>
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
                 <h4 style="text-align:center; margin:5px 0 0 0; font-size:11px; color:#555;">DUPLICATA SÉCURISÉ ADMIN</h4>
             </div>
             """
             
-            col_z_1, col_z_2 = st.columns([1, 2])
+            col_z_1, col_z_2 = st.columns([1.2, 1.8])
             with col_z_1:
                 st.markdown(ticket_reconstruit, unsafe_allow_html=True)
             with col_z_2:
-                st.info("💡 Ce panneau vous permet de réimprimer un ticket à tout moment si le rouleau thermique de la caisse a subi une coupure ou une panne lors de la fermeture.")
-                if st.button("🖨️ Lancer la réimpression de ce Duplicata Z", type="secondary", use_container_width=True):
+                st.info("💡 Ce panneau d'administration vous permet de consulter l'historique complet et d'éditer un duplicata conforme contenant les fonds physiques déclarés, l'écart comptable et la répartition des ventes.")
+                
+                if st.button("🖨️ Lancer la réimpression de ce Duplicata Z", type="primary", use_container_width=True):
                     js_reprint = f"""
                     <script>
                         var w = window.open('', '_blank', 'height=600,width=400');
-                        w.document.write('<html><head><title>Duplicata Z</title></head><body>');
+                        w.document.write('<html><head><title>Duplicata Rapport Z</title></head><body style="margin:5mm;">');
                         w.document.write(`{ticket_reconstruit}`);
                         w.document.write('</body></html>');
                         w.document.close();
                         setTimeout(function() {{ w.print(); w.close(); }}, 300);
                     </script>
                     """
-                    components.html(js_reprint, height=0, width=0)
+                    # Sécurisation complète contre les NameError
+                    st.components.v1.html(js_reprint, height=0, width=0)
 
     # 6. ANCIEN CODE INTÉGRÉ : Purges & Maintenance
     with tab_purge:
