@@ -632,20 +632,31 @@ def vue_cloture_caisse():
     """
 
     # Insertion sécurisée du bouton principal d'impression du Z global
-    with col_ecart2:
-        st.write("") 
-        if st.button("🖨️ Valider & Imprimer le Rapport Z Global", type="primary"):
-            js_print = f"""
-            <script>
-                var w = window.open();
-                w.document.write(`{html_print}`);
-                w.document.close();
-                setTimeout(function() {{ w.print(); w.close(); }}, 300);
-            </script>
-            """
-            # Appel via l'arborescence complète pour contourner l'erreur de portée d'import
-            st.components.v1.html(js_print, height=0, width=0)
+    # --- À INSÉRER DANS VUE_CLOTURE_CAISSE LORS DE L'ENREGISTREMENT DU Z ---
 
+# 1. On génère la chaîne descriptive du détail des ventes (Ex: "Poulet x3 | Alloco x2")
+if not df_synthese.empty:
+    liste_articles_str = " | ".join([f"{row['Article']} x{int(row['Quantite_Vendue'])}" for _, row in df_synthese.iterrows()])
+else:
+    liste_articles_str = "Aucune vente"
+
+# 2. Exemple de dictionnaire à enregistrer dans votre historique_z (ajustez selon vos colonnes existantes)
+nouvelle_cloture = {
+    "Ref_Z": f"Z-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+    "Date_Cloture": datetime.now().strftime("%d/%m/%Y %H:%M"),
+    "Recette_Encaissee": ca_brut,
+    "Especes_Physiques": especes_physiques,
+    "Ecart_Caisse": ecart,
+    "Articles_Vendus": nb_couverts,
+    "Tables_Servies": nb_tables,
+    "Fond_De_Caisse": 0, # Mettez votre variable de fond de caisse si existante
+    "Observations": "Clôture normale",
+    "Caissier": st.session_state.get('caissier_actif', 'Caisse Principale'),
+    "Detail_Articles": liste_articles_str  # <--- C'EST CETTE COLONNE QUI SAUVEGARDE LE DÉTAIL !
+}
+
+# (Exemple d'enregistrement dans votre DataFrame)
+# st.session_state.historique_z = pd.concat([st.session_state.historique_z, pd.DataFrame([nouvelle_cloture])], ignore_index=True)
     # =========================================================================
     # VOLET : TABLEAU DES VENTES PAR ARTICLE
     # =========================================================================
@@ -827,38 +838,53 @@ def vue_administrateur():
             
             infos_z = st.session_state.historique_z[st.session_state.historique_z['Ref_Z'] == z_choisi].iloc[0]
             
-            # 1. Extraction et sécurisation des nouvelles variables (Espèces, Écart, Articles)
+            # Extraction et sécurisation des variables financières
             recette_sys = float(infos_z.get('Recette_Encaissee', 0))
-            especes_decl = float(infos_z.get('Especes_Physiques', recette_sys)) # Valeur par défaut si ancien Z
+            especes_decl = float(infos_z.get('Especes_Physiques', recette_sys))
             ecart_constate = float(infos_z.get('Ecart_Caisse', 0))
             
-            # Formatage texte de l'écart pour le duplicata
             if ecart_constate == 0:
                 html_ecart = "CORRECT"
             else:
                 couleur_ecart = "#d9534f" if ecart_constate < 0 else "#5cb85c"
                 html_ecart = f"<span style='color:{couleur_ecart}; font-weight:bold;'>{ecart_constate:+,2.0f} F</span>"
 
-            # 2. Reconstitution dynamique des lignes d'articles vendus si sauvegardées, sinon fallback
+            # =========================================================================
+            # RECONSTRUCTION DU TABLEAU DÉTAILLÉ DEPUIS LA SAUVEGARDE
+            # =========================================================================
             html_lignes_articles = ""
             if 'Detail_Articles' in infos_z and pd.notna(infos_z['Detail_Articles']) and infos_z['Detail_Articles'] != "":
-                # Si vous stockez le détail sous forme de chaîne structurée (ex: "Bière x5|Poulet x2")
+                # Découpage de la chaîne sauvegardée "Article xQté | Article xQté"
                 segments = str(infos_z['Detail_Articles']).split('|')
                 for segment in segments:
                     if 'x' in segment:
                         parts = segment.split('x')
+                        # On récupère le nom de l'article et la quantité vendue
                         nom_art = parts[0].strip()
                         qte_art = parts[1].strip()
-                        html_lignes_articles += f"<tr><td style='padding:3px 0;'>{nom_art}</td><td style='text-align:center;'>{qte_art}</td><td style='text-align:right;'>-</td></tr>"
+                        
+                        html_lignes_articles += f"""
+                        <tr>
+                            <td style='padding: 4px 0; text-align: left;'>{nom_art}</td>
+                            <td style='text-align: center; font-weight: bold;'>{qte_art}</td>
+                            <td style='text-align: right; color: #666;'>-</td>
+                        </tr>
+                        """
             else:
-                # Fallback esthétique si aucun détail textuel n'a été enregistré sur cet ancien Z
-                html_lignes_articles = f"<tr><td style='padding:3px 0;'>Ventes globales</td><td style='text-align:center;'>{infos_z['Articles_Vendus']}</td><td style='text-align:right;'>{recette_sys:,.0f} F</td></tr>"
+                # Ligne de secours si le rapport Z est ancien ou n'a pas de données détaillées
+                html_lignes_articles = f"""
+                <tr>
+                    <td style='padding: 4px 0; text-align: left;'>Ventes globales (Ancien Log)</td>
+                    <td style='text-align: center; font-weight: bold;'>{int(infos_z['Articles_Vendus'])}</td>
+                    <td style='text-align: right;'>{recette_sys:,.0f} F</td>
+                </tr>
+                """
 
-            # 3. Structure du ticket reconstruit complet (Visuel Écran & Imprimante)
+            # Structure visuelle du ticket de duplicata
             ticket_reconstruit = f"""
             <div style="border:1px solid #000; padding:15px; background-color:#fff; color:#000; font-family:'Courier New', Courier, monospace; max-width:320px; margin:10px auto; font-size:13px; line-height:1.2;">
-                <h3 style="text-align:center; margin:0 0 5px 0; font-size:16px;">*** EASYGEST RESTO ***</h3>
-                <h4 style="text-align:center; margin:0 0 10px 0; font-size:14px;">DUPLICATA TICKET Z</h4>
+                <h3 style="text-align:center; margin:0 0 5px 0; font-size:15px;">*** EASYGEST RESTO ***</h3>
+                <h4 style="text-align:center; margin:0 0 10px 0; font-size:13px; letter-spacing:1px;">DUPLICATA TICKET Z</h4>
                 <p style="margin:3px 0;"><b>REF TICKET :</b> {infos_z['Ref_Z']}</p>
                 <p style="margin:3px 0;"><b>DATE CLÔTURE:</b> {infos_z['Date_Cloture']}</p>
                 <p style="margin:3px 0;"><b>CAISSIER    :</b> {infos_z.get('Caissier', 'Non spécifié')}</p>
@@ -869,12 +895,12 @@ def vue_administrateur():
                     <tr><td>Recette Système:</td><td style="text-align:right; font-weight:bold;">{recette_sys:,.0f} F</td></tr>
                     <tr><td>Espèces Réelles:</td><td style="text-align:right;">{especes_decl:,.0f} F</td></tr>
                     <tr><td>Écart de Caisse:</td><td style="text-align:right;">{html_ecart}</td></tr>
-                    <tr><td>Articles Vendus:</td><td style="text-align:right;">{infos_z['Articles_Vendus']} pcs</td></tr>
-                    <tr><td>Tables Servies :</td><td style="text-align:right;">{infos_z['Tables_Servies']}</td></tr>
+                    <tr><td>Articles Vendus:</td><td style="text-align:right;">{int(infos_z['Articles_Vendus'])} pcs</td></tr>
+                    <tr><td>Tables Servies :</td><td style="text-align:right;">{int(infos_z['Tables_Servies'])}</td></tr>
                 </table>
                 
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <p style="margin:5px 0; font-weight:bold;">DÉTAIL DES ARTICLES :</p>
+                <p style="margin:5px 0; font-weight:bold;">DÉTAIL DES ARTICLES VENDUS :</p>
                 <table style="width:100%; font-size:12px; border-collapse:collapse;">
                     <thead>
                         <tr style="border-bottom:1px solid #000;">
@@ -891,11 +917,11 @@ def vue_administrateur():
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
                 <p style="margin:3px 0;"><b>OBSERVATIONS :</b><br>{infos_z.get('Observations', 'Aucune')}</p>
                 <hr style="border-top: 1px dashed #000; margin:10px 0;">
-                <h4 style="text-align:center; margin:5px 0 0 0; font-size:11px; color:#555;">DUPLICATA SÉCURISÉ ADMIN</h4>
+                <h4 style="text-align:center; margin:5px 0 0 0; font-size:10px; color:#555; font-style:italic;">DUPLICATA SÉCURISÉ ADMIN</h4>
             </div>
             """
             
-            col_z_1, col_z_2 = st.columns([1.2, 1.8])
+            col_z_1, col_z_2 = st.columns([1.3, 1.7])
             with col_z_1:
                 st.markdown(ticket_reconstruit, unsafe_allow_html=True)
             with col_z_2:
@@ -912,7 +938,6 @@ def vue_administrateur():
                         setTimeout(function() {{ w.print(); w.close(); }}, 300);
                     </script>
                     """
-                    # Sécurisation complète contre les NameError
                     st.components.v1.html(js_reprint, height=0, width=0)
 
     # 6. ANCIEN CODE INTÉGRÉ : Purges & Maintenance
