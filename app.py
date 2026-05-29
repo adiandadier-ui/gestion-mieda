@@ -527,12 +527,11 @@ def vue_cloture_caisse():
         st.warning(f"⚠️ **Attention :** Il reste des tables ouvertes non payées.")
 
     # =========================================================================
-    # NOUVEAU VOLET : DÉCLARATION DES ESPÈCES ET CALCUL DE L'ÉCART
+    # VOLET : DÉCLARATION DES ESPÈCES ET CALCUL DE L'ÉCART
     # =========================================================================
     st.markdown("---")
     st.subheader("💵 Déclaration des Espèces Physiques")
     
-    # Entrée du montant réel physique en caisse
     especes_physiques = st.number_input(
         "Montant total des espèces comptées en caisse (FCFA) :", 
         min_value=0, 
@@ -540,7 +539,6 @@ def vue_cloture_caisse():
         step=500
     )
     
-    # Calcul dynamique de l'écart
     ecart = especes_physiques - ca_brut
     
     col_ecart1, col_ecart2 = st.columns(2)
@@ -552,7 +550,7 @@ def vue_cloture_caisse():
         else:
             st.error(f"📉 Manquant de caisse détecté : **{ecart:,.0f} FCFA**")
 
-    # PREPARATION DE LA SYNTHÈSE DES VENTES POUR L'IMPRESSION GLOBALISÉE
+    # PRÉPARATION DE LA SYNTHÈSE DES VENTES
     df_synthese = pd.DataFrame(columns=['Article', 'Quantite_Vendue', 'Chiffre_Affaires'])
     if not df_jour_paye.empty:
         if 'Designation' in df_jour_paye.columns:
@@ -572,7 +570,7 @@ def vue_cloture_caisse():
         df_synthese = df_synthese.rename(columns={'Article_Affichage': 'Article'})
         df_synthese = df_synthese.sort_values(by='Quantite_Vendue', ascending=False)
 
-    # Construction du contenu d'impression partagé
+    # Construction du contenu du Ticket Z HTML
     date_str = datetime.now().strftime('%d/%m/%Y à %H:%M')
     lignes_html = ""
     for _, row in df_synthese.iterrows():
@@ -633,10 +631,46 @@ def vue_cloture_caisse():
     </html>
     """
 
-    # Insertion du bouton principal d'impression du Z global sous les bandeaux d'écarts
+    # Insertion sécurisée du bouton principal d'impression du Z global
     with col_ecart2:
-        st.write("") # Calage espace vertical
-        if st.button("🖨️
+        st.write("") 
+        if st.button("🖨️ Valider & Imprimer le Rapport Z Global", type="primary"):
+            js_print = f"""
+            <script>
+                var w = window.open();
+                w.document.write(`{html_print}`);
+                w.document.close();
+                setTimeout(function() {{ w.print(); w.close(); }}, 300);
+            </script>
+            """
+            # Appel via l'arborescence complète pour contourner l'erreur de portée d'import
+            st.components.v1.html(js_print, height=0, width=0)
+
+    # =========================================================================
+    # VOLET : TABLEAU DES VENTES PAR ARTICLE
+    # =========================================================================
+    st.markdown("---")
+    st.subheader("📊 Rapport Général des Ventes par Article")
+
+    if not df_jour_paye.empty:
+        st.dataframe(
+            df_synthese.style.format({'Quantite_Vendue': '{:,.0f}', 'Chiffre_Affaires': '{:,.0f} F'}),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        if st.button("🖨️ Imprimer le Détail des Articles (Copie)", type="secondary"):
+            js_print = f"""
+            <script>
+                var w = window.open();
+                w.document.write(`{html_print}`);
+                w.document.close();
+                setTimeout(function() {{ w.print(); w.close(); }}, 300);
+            </script>
+            """
+            st.components.v1.html(js_print, height=0, width=0)
+    else:
+        st.info("Aucune vente validée et payée pour le moment pour cette journée.")
 
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
