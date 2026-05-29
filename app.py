@@ -526,7 +526,32 @@ def vue_cloture_caisse():
     if not df_jour_en_cours.empty:
         st.warning(f"⚠️ **Attention :** Il reste des tables ouvertes non payées.")
 
+    # =========================================================================
+    # NOUVEAU VOLET : DÉCLARATION DES ESPÈCES ET CALCUL DE L'ÉCART
+    # =========================================================================
+    st.markdown("---")
+    st.subheader("💵 Déclaration des Espèces Physiques")
     
+    # Entrée du montant réel physique en caisse
+    especes_physiques = st.number_input(
+        "Montant total des espèces comptées en caisse (FCFA) :", 
+        min_value=0, 
+        value=int(ca_brut), 
+        step=500
+    )
+    
+    # Calcul dynamique de l'écart
+    ecart = especes_physiques - ca_brut
+    
+    col_ecart1, col_ecart2 = st.columns(2)
+    with col_ecart1:
+        if ecart == 0:
+            st.success("✅ Caisse équilibrée : Aucun écart détecté.")
+        elif ecart > 0:
+            st.info(f"📈 Surplus de caisse détecté : **+{ecart:,.0f} FCFA**")
+        else:
+            st.error(f"📉 Manquant de caisse détecté : **{ecart:,.0f} FCFA**")
+
     # =========================================================================
     # NOUVEAU VOLET CORRIGÉ : UTILISATION DIRECTE DE LA DÉSIGNATION DU JOURNAL
     # =========================================================================
@@ -564,7 +589,7 @@ def vue_cloture_caisse():
             hide_index=True
         )
 
-        # Génération du HTML pour l'impression thermique ou papier standard
+        # Génération du HTML pour l'impression thermique ou papier standard incluant l'écart
         date_str = datetime.now().strftime('%d/%m/%Y à %H:%M')
         lignes_html = ""
         for _, row in df_synthese.iterrows():
@@ -575,6 +600,9 @@ def vue_cloture_caisse():
                 <td style='text-align: right;'>{int(row['Chiffre_Affaires']):,} F</td>
             </tr>
             """
+
+        # Formatage textuel de l'éventuel écart pour le ticket d'impression
+        statut_ecart_html = "CORRECT" if ecart == 0 else f"{ecart:+,2.0f} F"
 
         html_print = f"""
         <html>
@@ -593,12 +621,13 @@ def vue_cloture_caisse():
             <div class='text-center'>Date: {date_str}</div>
             <div class='divider'></div>
             
-            <div class='bold'>RÉSUMÉ SYSTÈME :</div>
+            <div class='bold'>RÉSUMÉ SYSTÈME & CAISSE :</div>
             <table style='margin-bottom: 5px;'>
-                <tr><td>Recette brute :</td><td style='text-align: right;' class='bold'>{ca_brut:,.0f} F</td></tr>
+                <tr><td>Recette système :</td><td style='text-align: right;' class='bold'>{ca_brut:,.0f} F</td></tr>
+                <tr><td>Espèces physique :</td><td style='text-align: right;'>{especes_physiques:,.0f} F</td></tr>
+                <tr><td class='bold'>Écart de caisse :</td><td style='text-align: right;' class='bold'>{statut_ecart_html}</td></tr>
                 <tr><td>Articles vendus :</td><td style='text-align: right;'>{nb_couverts} pcs</td></tr>
                 <tr><td>Tables servies :</td><td style='text-align: right;'>{nb_tables}</td></tr>
-                <tr><td>Panier moyen :</td><td style='text-align: right;'>{panier_moyen:,.0f} F</td></tr>
             </table>
             
             <div class='divider'></div>
