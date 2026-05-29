@@ -526,29 +526,7 @@ def vue_cloture_caisse():
     if not df_jour_en_cours.empty:
         st.warning(f"⚠️ **Attention :** Il reste des tables ouvertes non payées.")
 
-    def vue_cloture_caisse():
-    st.subheader("🔒 Clôture Journalière & Génération du Z de Caisse")
-    st.write(f"Date d'activité : **{datetime.now().strftime('%d/%m/%Y')}**")
-    st.markdown("---")
     
-    df_v = st.session_state.historique_ventes
-    df_jour_paye = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'Payé')].copy()
-    df_jour_en_cours = df_v[(df_v['Type_Flux'] == 'Sortie') & (df_v['Statut'] == 'En cours')].copy()
-    
-    ca_brut = df_jour_paye['Total_FCFA'].sum() if not df_jour_paye.empty else 0
-    nb_couverts = int(df_jour_paye['Quantite'].sum()) if not df_jour_paye.empty else 0
-    nb_tables = df_jour_paye['Table'].nunique() if not df_jour_paye.empty else 0
-    panier_moyen = ca_brut / nb_tables if nb_tables > 0 else 0
-    
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Recette Attendue Système (FCFA)", f"{ca_brut:,.0f} F")
-    c2.metric("Total Articles Vendus", f"{nb_couverts} pcs")
-    c3.metric("Nombre de Tables Servies", f"{nb_tables}")
-    c4.metric("Panier Moyen / Table", f"{panier_moyen:,.0f} F")
-    
-    if not df_jour_en_cours.empty:
-        st.warning(f"⚠️ **Attention :** Il reste des tables ouvertes non payées.")
-
     # =========================================================================
     # NOUVEAU VOLET CORRIGÉ : UTILISATION DIRECTE DE LA DÉSIGNATION DU JOURNAL
     # =========================================================================
@@ -656,6 +634,7 @@ def vue_cloture_caisse():
             components.html(js_print, height=0, width=0)
     else:
         st.info("Aucune vente validée et payée pour le moment pour cette journée.")
+
 def vue_configuration_carte():
     st.subheader("⚙️ Configuration de la Carte")
     action = st.radio("Sélectionnez une action :", ["➕ Ajouter un Nouveau Produit", "✏️ Modifier un Produit Existant", "❌ Supprimer un Produit"])
