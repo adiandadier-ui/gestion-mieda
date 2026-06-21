@@ -242,7 +242,7 @@ def vue_prise_commande():
 
         table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
 
-        item_choisi = st.selectbox("Article demandé :", placeholder="Ex:list(dict_menu.keys()"))
+        item_choisi = st.selectbox("Article demandé :", placeholder="Ex:ajouter un produit"))
 
         
 
