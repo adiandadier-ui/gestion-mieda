@@ -189,93 +189,187 @@ if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
 # DÉFINITION DES DIFFÉRENTES VUES
 # ==========================================
 def vue_prise_commande():
+
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
+
     df_global = consolider_stocks_et_marges()
+
     
+
     if len(st.session_state.base_menu) == 0 or (len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']):
+
         st.warning("⚠️ La carte est vide. Utilisez l'accès Admin pour la configurer.")
+
         return
+
         
+
     col1, col2 = st.columns([1, 1])
+
     with col1:
+
         dict_menu = {}
+
         dict_categories = {}
+
         for _, r in st.session_state.base_menu.iterrows():
+
             designation_upper = str(r['Designation']).upper().strip()
+
             if designation_upper in MATIERES_PREMIERES_CIBLES:
+
                 continue
+
                 
+
             label = f"[{r['Categorie']}] {r['Designation']} ({int(r['Prix_Vente_FCFA'])} FCFA)"
+
             dict_menu[label] = r['Designation']
+
             dict_categories[label] = r['Categorie']
 
+
+
         if not dict_menu:
+
             st.info("Aucun plat commercialisable configuré pour le moment.")
+
             return
 
+
+
+        # --- MODIFICATION ICI : ÉLÉMENTS SORTIS DU FORM POUR MISES À JOUR INSTANTANÉES ---
+
+        table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
+
+        item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
+
+        
+
+        categorie_active = dict_categories[item_choisi] if item_choisi else "Cuisine"
+
+        
+
+        accomp_choisi = "-"
+
+        if categorie_active == "Cuisine":
+
+            accomp_choisi = st.selectbox("Accompagnement gratuit :", ["Alloco", "Attiéké", "Frites", "Riz Blanc", "Riz Gras", "Sans"])
+
+            
+
+        # Le reste des entrées reste dans un formulaire pour l'envoi final
+
         with st.form("form_commande_strict", clear_on_submit=True):
-            table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
-            item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
-            categorie_active = dict_categories[item_choisi] if item_choisi else "Cuisine"
-            
-            accomp_choisi = "-"
-            if categorie_active == "Cuisine":
-                accomp_choisi = st.selectbox("Accompagnement gratuit :", ["Alloco", "Attiéké", "Frites", "Riz Blanc", "Riz Gras", "Sans"])
-                
+
             quantite = st.number_input("Quantité :", min_value=1, value=1)
+
             opt_remise = st.selectbox("Taux de remise :", [0, 5, 10, 15, 20])
+
             motif_remise = "Aucun" if opt_remise == 0 else "Geste Commercial"
+
             
+
             if st.form_submit_button("Envoyer la commande 🚀"):
+
                 designation_plat = dict_menu[item_choisi]
+
                 
+
                 lignes_trouvees = df_global[df_global['Designation'] == designation_plat]
+
                 if lignes_trouvees.empty:
+
                     st.error(f"❌ Erreur : L'article '{designation_plat}' est introuvable dans la base des données.")
+
                     return
+
                 
+
                 item_details = lignes_trouvees.iloc[0]
+
                 nom_matiere_brute, coef_defalquage = determiner_matiere_premiere(item_details['Designation'], item_details['Prix_Vente_FCFA'])
+
                 
+
                 matiere_a_deduire = designation_plat
+
                 target_details = item_details
+
                 quantite_a_deduire = float(quantite)
+
                 
+
                 if nom_matiere_brute:
+
                     match_brute = df_global[df_global['Designation'].str.upper().str.strip() == nom_matiere_brute.upper()]
+
                     if not match_brute.empty:
+
                         matiere_a_deduire = match_brute.iloc[0]['Designation']
+
                         target_details = match_brute.iloc[0]
+
                         quantite_a_deduire = float(quantite) * coef_defalquage
+
                     else:
+
                         st.error(f"❌ Erreur : L'ingrédient de base '{nom_matiere_brute}' n'existe pas en stock.")
+
                         st.stop()
 
+
+
                 if quantite_a_deduire > target_details['Quantite_Dispo']:
+
                     st.error(f"❌ Stock insuffisant ! (Disponible en {target_details['Designation']} : {target_details['Quantite_Dispo']} pcs | Demandé : {quantite_a_deduire} pcs)")
+
                 else:
+
                     total_net = (quantite * item_details['Prix_Vente_FCFA']) * (1 - (opt_remise / 100))
+
                     
+
                     nouvelle_ligne = pd.DataFrame([{
+
                         'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+
                         'Table': table_choisie, 
+
                         'Designation': designation_plat, 
+
                         'Matiere_Stock': matiere_a_deduire, 
+
                         'Type_Flux': 'Sortie', 
+
                         'Quantite': quantite_a_deduire, 
+
                         'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
+
                         'Remise_Pourcent': opt_remise, 
+
                         'Accompagnement': accomp_choisi, 
+
                         'Total_FCFA': total_net,
+
                         'Motif_Remise': motif_remise, 
+
                         'Statut': 'En cours', 
+
                         'Ref_Bon': '-'
+
                     }])
+
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
+
                     sauvegarder_ventes()
+
                     st.success(f"Commande envoyée ! Plat enregistré : {item_details['Designation']} (Stock réduit de {quantite_a_deduire})")
+
                     st.rerun()
+
     with col2:
+
         st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
 
 def vue_commandes_additions():
