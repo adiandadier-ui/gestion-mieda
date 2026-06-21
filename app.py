@@ -402,24 +402,108 @@ def vue_commandes_additions():
             total_addition = df_table_strict['Total_FCFA'].sum()
             st.markdown(f"## **Total Net à Payer : {total_addition:,.0f} FCFA**")
             
-            col_btn1, col_btn2 = st.columns(2)
-            if col_btn1.button(f"Encaisser la {table_selectionnee} 💰", type="primary"):
+            # --- STRUCTURE DES BOUTONS D'ACTION ---
+            col_btn1, col_btn2, col_btn3 = st.columns(3)
+            
+            # 1. ENCAISSER LA TABLE
+            if col_btn1.button(f"Encaisser la {table_selectionnee} 💰", type="primary", use_container_width=True):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
                 sauvegarder_ventes()
                 st.success(f"La {table_selectionnee} a été réglée !")
                 st.rerun()
                 
-            if col_btn2.button(f"Annuler la {table_selectionnee} ❌"):
+            # 2. NOUVEAU : BOUTON D'IMPRESSION DU TICKET CLIENT
+            if col_btn2.button(f"Imprimer le Ticket 🖨️", use_container_width=True):
+                st.session_state.declencher_impression = True
+                st.session_state.donnees_ticket = {
+                    'table': table_selectionnee,
+                    'articles': df_table_strict.to_dict('records'),
+                    'total': total_addition
+                }
+
+            # 3. ANNULER LA TABLE
+            if col_btn3.button(f"Annuler la {table_selectionnee} ❌", use_container_width=True):
                 indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
                 st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
                 sauvegarder_ventes()
                 st.warning(f"Commandes annulées.")
                 st.rerun()
 
+            # --- SCRIPT D'IMPRESSION AUTOMATIQUE ---
+            if st.session_state.get('declencher_impression', False):
+                t_data = st.session_state.donnees_ticket
+                heure_ticket = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                
+                # Construction des lignes d'articles en HTML
+                lignes_html = ""
+                for art in t_data['articles']:
+                    remise_text = f" (-{art['Remise_Pourcent']}% )" if art['Remise_Pourcent'] > 0 else ""
+                    lignes_html += f"""
+                    <tr>
+                        <td style='padding: 5px 0;'>{art['Désignation Produit']}{remise_text}<br><small>{int(art['Quantite'])} x {int(art['Prix_Unitaire_Flux']):,} F</small></td>
+                        <td style='text-align: right; padding: 5px 0; vertical-align: bottom;'>{int(art['Total_FCFA']):,} F</td>
+                    </tr>
+                    """
+
+                # Code HTML complet du ticket optimisé pour impression ticket de caisse
+                html_ticket = f"""
+                <html>
+                <head>
+                    <style>
+                        @page {{ size: auto; margin: 0mm; }}
+                        body {{ font-family: 'Courier New', Courier, monospace; width: 280px; margin: 10px auto; color: #000; font-size: 13px; }}
+                        .text-center {{ text-align: center; }}
+                        .bold {{ font-weight: bold; }}
+                        .divider {{ border-top: 1px dashed #000; margin: 10px 0; }}
+                        table {{ width: 100%; border-collapse: collapse; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="text-center">
+                        <h2 style="margin: 5px 0;">EASYGEST</h2>
+                        <p style="margin: 2px 0;">Restaurant & Bar</p>
+                        <p style="margin: 2px 0;">Abidjan, Côte d'Ivoire</p>
+                    </div>
+                    <div class="divider"></div>
+                    <p style="margin: 3px 0;"><b>Date:</b> {heure_ticket}</p>
+                    <p style="margin: 3px 0;"><b>{t_data['table']}</b></p>
+                    <p style="margin: 3px 0;"><b>Serveur:</b> {st.session_state.get('nom_utilisateur', 'Caisse')}</p>
+                    <div class="divider"></div>
+                    <table>
+                        <thead>
+                            <tr style="border-bottom: 1px solid #000;">
+                                <th style="text-align: left; padding-bottom: 5px;">Article</th>
+                                <th style="text-align: right; padding-bottom: 5px;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {lignes_html}
+                        </tbody>
+                    </table>
+                    <div class="divider"></div>
+                    <h3 style="margin: 5px 0; display: flex; justify-content: space-between;">
+                        <span>NET A PAYER :</span>
+                        <span style="float: right;">{int(t_data['total']):,} FCFA</span>
+                    </h3>
+                    <div class="divider"></div>
+                    <div class="text-center" style="margin-top: 15px; font-size: 11px;">
+                        <p>Merci de votre visite !</p>
+                        <p>À bientôt ✨</p>
+                    </div>
+                    <script>
+                        window.print();
+                    </script>
+                </body>
+                </html>
+                """
+                # Injection discrète du composant d'impression invisible à l'écran
+                components.html(html_ticket, height=0, width=0)
+                # Réinitialisation du déclencheur d'impression
+                st.session_state.declencher_impression = False
+
     with tabs_caisse[1]:
         st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
-
 def vue_stocks_appro():
     st.subheader("📦 Gestion des Stocks & Bons d'Entrée")
     df_global = consolider_stocks_et_marges()
