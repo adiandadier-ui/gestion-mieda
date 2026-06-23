@@ -24,7 +24,15 @@ def determiner_matiere_premiere(nom_article, prix_unitaire):
     ainsi que le coefficient de décalquage (consommation de stock).
     """
     nom_article_up = str(nom_article).upper().strip()
-    
+
+    # --- CAS DES LIQUEURS PAR TOURNÉE (BAR) ---
+    if categorie_up == "BAR" and ("TRNÉE" in nom_article_up or "TOURNEE" in nom_article_up):
+        # On extrait le nom de la liqueur en retirant les mentions de tournée
+        nom_liqueur_brute = nom_article_up.replace("TRNÉE", "").replace("TOURNÉE", "").replace("TOURNEE", "").strip()
+        # Une tournée défalque 10 doses/verres de cette liqueur (Ajuster le coef si nécessaire)
+        coef_tournee = 10.0 
+        return nom_liqueur_brute, coef_tournee
+        
     # --- CAS DES PLATS ACCOMPAGNÉS DE SAUCE (1 Portion = 15 Plats) ---
     if "SAUCE" in nom_article_up:
         coef_sauce = 1.0 / 15.0
