@@ -182,7 +182,7 @@ choix_vue = st.sidebar.radio("Navigation :", options_disponibles)
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
     
-    # On récupère les données consolidées des articles
+    # 1. Récupération des données consolidées
     df_global = consolider_stocks_et_marges()
 
     col1, col2 = st.columns([1, 1])
@@ -190,22 +190,29 @@ def vue_prise_commande():
         dict_menu = {}
         dict_categories = {}
         
-        # CORRECTION : On boucle sur df_global pour appliquer le filtre réel
+        # 2. Construction de la liste avec filtrage de sécurité strict
         for _, r in df_global.iterrows():
-            designation_upper = str(r['Designation']).upper().strip()
+            designation_reelle = str(r['Designation'])
+            designation_upper = designation_reelle.upper().strip()
             
-            # FILTRE SÉCURISÉ TOTAL : Élimine les matières premières et TOUT article contenant le mot "LIQUEUR"
-            if designation_upper in MATIERES_PREMIERES_CIBLES or "LIQUEUR" in designation_upper:
+            # CRUCIAL : Si le mot LIQUEUR est présent OU si c'est une matière première brute, on IGNORE complètement
+            if "LIQUEUR" in designation_upper or designation_upper in MATIERES_PREMIERES_CIBLES:
                 continue
 
-            label = f"[{r['Categorie']}] {r['Designation']} ({int(r['Prix_Vente_FCFA'])} FCFA)"
-            dict_menu[label] = r['Designation']
+            # Double vérification sur la catégorie pour exclure les stocks bruts si nécessaire
+            if "STOCK" in str(r['Categorie']).upper():
+                continue
+
+            label = f"[{r['Categorie']}] {designation_reelle} ({int(r['Prix_Vente_FCFA'])} FCFA)"
+            dict_menu[label] = designation_reelle
             dict_categories[label] = r['Categorie']
 
+        # 3. Sécurité si la liste est vide
         if not dict_menu:
-            st.info("Aucun plat ou boisson disponible à la vente.")
+            st.info("Aucun plat ou boisson (format vente) disponible à la vente.")
             return
 
+        # 4. Affichage des éléments filtrés sur l'interface
         table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
         item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
         
@@ -255,4 +262,3 @@ def vue_prise_commande():
                     
     with col2:
         st.info(f"👤 Connecté : **{st.session_state.nom_utilisateur}**")
-if choix_vue == "📝 Prise de Commande": vue_prise_commande()
