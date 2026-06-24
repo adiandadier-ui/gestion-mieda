@@ -181,6 +181,8 @@ choix_vue = st.sidebar.radio("Navigation :", options_disponibles)
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
+    
+    # On récupère les données consolidées des articles
     df_global = consolider_stocks_et_marges()
 
     col1, col2 = st.columns([1, 1])
@@ -188,7 +190,8 @@ def vue_prise_commande():
         dict_menu = {}
         dict_categories = {}
         
-        for _, r in st.session_state.base_menu.iterrows():
+        # CORRECTION : On boucle sur df_global pour appliquer le filtre réel
+        for _, r in df_global.iterrows():
             designation_upper = str(r['Designation']).upper().strip()
             
             # FILTRE SÉCURISÉ TOTAL : Élimine les matières premières et TOUT article contenant le mot "LIQUEUR"
@@ -252,5 +255,4 @@ def vue_prise_commande():
                     
     with col2:
         st.info(f"👤 Connecté : **{st.session_state.nom_utilisateur}**")
-
 if choix_vue == "📝 Prise de Commande": vue_prise_commande()
