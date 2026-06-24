@@ -210,12 +210,17 @@ def vue_prise_commande():
     with col1:
         dict_menu = {}
         dict_categories = {}
+        
         for _, r in st.session_state.base_menu.iterrows():
-            # --- CORRECTION ET MASQUAGE AUTOMATIQUE ---
-            # Si l'article est dans la liste ou commence par "LIQUEUR", on le masque pour les serveurs
-            if est_une_matiere_premiere(r['Designation']):
-                continue
-                
+            # --- BLOCAGE STRICT AU TOUT DÉBUT DE LA BOUCLE ---
+            # On récupère la désignation brute de la ligne actuelle
+            designation_brute = str(r['Designation']).strip()
+            
+            # Si le nom commence par LIQUEUR ou est dans les matières premières, on passe DIRECTEMENT à la suite
+            if est_une_matiere_premiere(designation_brute):
+                continue  # Cet article est sauté, il ne sera JAMAIS ajouté au dictionnaire du serveur
+            
+            # --- UNIQUEMENT LES ARTICLES VALIDES PASSENT ICI ---
             label = f"[{r['Categorie']}] {r['Designation']} ({int(r['Prix_Vente_FCFA'])} FCFA)"
             dict_menu[label] = r['Designation']
             dict_categories[label] = r['Categorie']
@@ -225,6 +230,8 @@ def vue_prise_commande():
             return
 
         table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
+        
+        # Le selectbox ne contiendra désormais plus DU TOUT les lignes contenant "LIQUEUR"
         item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
         
         categorie_active = dict_categories[item_choisi] if item_choisi else "Cuisine"
