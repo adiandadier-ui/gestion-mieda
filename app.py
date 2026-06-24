@@ -16,7 +16,7 @@ MATIERES_PREMIERES_CIBLES = [
     "LAPIN", 
     "PINTADE",
     "PORTION SAUCE"
-    "LIQUEUR HAMWICK"
+    "LIQUEUR"
 ]
 
 def determiner_matiere_premiere(nom_article, prix_unitaire):
