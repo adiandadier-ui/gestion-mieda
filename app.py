@@ -16,41 +16,40 @@ MATIERES_PREMIERES_CIBLES = [
     "LAPIN", 
     "PINTADE",
     "PORTION SAUCE",
-    "LIQUEUR"  # Détecteur racine pour filtrer et masquer globalement
+    "LIQUEUR"
 ]
 
 def determiner_matiere_premiere(nom_article, prix_unitaire):
     """
     Détermine dynamiquement la matière première en stock ainsi que le coefficient 
-    de décalquage sans jamais modifier le code (gère les liqueurs automatiquement).
+    de décalquage (gère TOURNEE, TRNÉE, TRNEE, DEMI, ENTIERE).
     """
     nom_article_up = str(nom_article).upper().strip()
     
-    # --- CAS DES PLATS ACCOMPAGNÉS DE SAUCE (1 Portion = 15 Plats) ---
+    # --- CAS DES PLATS ACCOMPAGNÉS DE SAUCE ---
     if "SAUCE" in nom_article_up:
-        coef_sauce = 1.0 / 15.0
-        return "PORTION SAUCE", coef_sauce
+        return "PORTION SAUCE", 1.0 / 15.0
 
-    # --- CAS DES FORMATS DE VENTE DE LIQUEURS (100% AUTOMATISÉ) ---
-    if "TOURNEE" in nom_article_up or "DEMI" in nom_article_up or "ENTIERE" in nom_article_up:
-        # On extrait la liste des articles configurés dans le menu pour trouver la bouteille brute
+    # --- CAS DES FORMATS DE VENTE DE LIQUEURS (Prise en compte de TRNÉE / TRNEE) ---
+    est_un_verre = "TOURNEE" in nom_article_up or "TRNÉE" in nom_article_up or "TRNEE" in nom_article_up
+    est_un_demi  = "DEMI" in nom_article_up
+    est_entiere  = "ENTIERE" in nom_article_up or "BOUTEILLE" in nom_article_up
+
+    if est_un_verre or est_un_demi or est_entiere:
         if 'base_menu' in st.session_state and not st.session_state.base_menu.empty:
             tous_les_articles = st.session_state.base_menu['Designation'].tolist()
-            
-            # On filtre pour ne garder que les lignes de stock brutes contenant le mot "LIQUEUR"
             liqueurs_en_stock = [str(art).upper().strip() for art in tous_les_articles if "LIQUEUR" in str(art).upper()]
             
             for liqueur_brute in liqueurs_en_stock:
-                # On extrait le nom de la marque (ex: on retire "LIQUEUR " pour avoir "CHIVAS")
+                # On extrait la marque nettoyée (ex: "HAMWICK")
                 marque = liqueur_brute.replace("LIQUEUR", "").strip()
                 
-                # Si la marque (ex: CHIVAS) est incluse dans le format vendu (ex: TOURNEE CHIVAS)
                 if marque and marque in nom_article_up:
-                    if "TOURNEE" in nom_article_up:   return liqueur_brute, 0.04
-                    elif "DEMI" in nom_article_up:    return liqueur_brute, 0.50
-                    elif "ENTIERE" in nom_article_up: return liqueur_brute, 1.00
+                    if est_un_verre: return liqueur_brute, 0.04
+                    elif est_un_demi: return liqueur_brute, 0.50
+                    elif est_entiere: return liqueur_brute, 1.00
 
-    # --- CAS DES POISSONS (Par défaut coefficient 1) ---
+    # --- CAS DES POISSONS ---
     if "POISSON" in nom_article_up:
         coef = 1.0
         if prix_unitaire == 2000: return "PETIT POISSON", coef
@@ -62,7 +61,7 @@ def determiner_matiere_premiere(nom_article, prix_unitaire):
             if "GROS" in nom_article_up: return "GROS POISSON", coef
             return None, 0.0
             
-    # --- CAS DES VIANDES FRACTIONNÉES ---
+    # --- CAS DES VIANDES ---
     base_viande = None
     if "POULET" in nom_article_up: base_viande = "POULET"
     elif "LAPIN" in nom_article_up: base_viande = "LAPIN"
@@ -78,12 +77,7 @@ def determiner_matiere_premiere(nom_article, prix_unitaire):
 # ==========================================
 # 1. CONFIGURATION DE L'INTERFACE
 # ==========================================
-st.set_page_config(
-    page_title="Easygest Resto Pro+",
-    page_icon="🍳",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Easygest Resto Pro+", page_icon="🍳", layout="wide")
 
 # ==========================================
 # 2. INITIALISATION ET STOCKAGE LOCAL (C:)
@@ -95,8 +89,7 @@ def initialiser_dossier_easygest():
             os.makedirs(chemin_cible)
         except Exception:
             chemin_cible = os.path.join(os.getcwd(), "EASYGEST_APPS_LOCAL")
-            if not os.path.exists(chemin_cible):
-                os.makedirs(chemin_cible)
+            if not os.path.exists(chemin_cible): os.makedirs(chemin_cible)
     return chemin_cible
 
 DOSSIER_EXPLOITATION = initialiser_dossier_easygest()
@@ -134,25 +127,15 @@ if 'historique_bons' not in st.session_state:
 def sauvegarder_utilisateurs(): st.session_state.base_utilisateurs.to_csv(CSV_UTILISATEURS, index=False, encoding='utf-8-sig')
 def sauvegarder_menu(): st.session_state.base_menu.to_csv(CSV_MENU, index=False, encoding='utf-8-sig')
 def sauvegarder_ventes(): st.session_state.historique_ventes.to_csv(CSV_VENTES, index=False, encoding='utf-8-sig')
-def sauvegarder_z_historique(): st.session_state.historique_z.to_csv(CSV_Z_HISTORIQUE, index=False, encoding='utf-8-sig')
-
-def sauvegarder_bons():
-    liste_bons = [{'Ref_Bon': k, **v} for k, v in st.session_state.historique_bons.items()]
-    if liste_bons:
-        pd.DataFrame(liste_bons).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
-    else:
-        pd.DataFrame(columns=['Ref_Bon', 'Date', 'Type', 'Article', 'Quantite', 'Prix_Unitaire', 'Total', 'Fournisseur']).to_csv(CSV_BONS, index=False, encoding='utf-8-sig')
 
 def consolider_stocks_et_marges():
     df_art = st.session_state.base_menu.copy()
     df_vnt = st.session_state.historique_ventes.copy()
-    
     if not df_vnt.empty:
         df_sorties = df_vnt[(df_vnt['Type_Flux'] == 'Sortie') & (df_vnt['Statut'] != 'Annulé')].groupby('Matiere_Stock')['Quantite'].sum().reset_index(name='Total_Sorties').rename(columns={'Matiere_Stock': 'Designation'})
         df_entrees = df_vnt[df_vnt['Type_Flux'] == 'Réappro'].groupby('Matiere_Stock')['Quantite'].sum().reset_index(name='Total_Entrees').rename(columns={'Matiere_Stock': 'Designation'})
     else:
         df_sorties, df_entrees = pd.DataFrame(columns=['Designation', 'Total_Sorties']), pd.DataFrame(columns=['Designation', 'Total_Entrees'])
-        
     df_res = df_art.merge(df_sorties, on='Designation', how='left').merge(df_entrees, on='Designation', how='left')
     df_res['Total_Sorties'] = df_res['Total_Sorties'].fillna(0)
     df_res['Total_Entrees'] = df_res['Total_Entrees'].fillna(0)
@@ -168,20 +151,17 @@ if 'nom_utilisateur' not in st.session_state: st.session_state.nom_utilisateur =
 
 OPTIONS_PAR_ROLE = {
     "Serveur": ["📝 Prise de Commande"],
-    "Responsable Caisse": ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements", "🔒 Clôture de Caisse", "⚙️ Configuration Carte"],
-    "Administrateur": ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements", "📊 Finances & Marges", "🔒 Clôture de Caisse", "⚙️ Configuration Carte", "🔐 Administrateur"]
+    "Responsable Caisse": ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements"],
+    "Administrateur": ["📝 Prise de Commande", "🧾 Commandes & Additions", "📦 Stocks & Approvisionnements"]
 }
 
 if not st.session_state.authentifie:
-    st.markdown("<style>div[data-testid='stSidebarNav'] {display: none;}</style>", unsafe_allow_html=True)
     _, col_centre, _ = st.columns([1, 1.2, 1])
     with col_centre:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown('<div style="text-align: center; background-color: #f8f9fa; padding: 20px; border-radius: 10px; border-left: 5px solid #ff4b4b; margin-bottom: 25px;"><h1 style="margin: 0; color: #31333F; font-size: 28px;">🍳 Easygest Resto</h1><p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">Système de Gestion Intégrée</p></div>', unsafe_allow_html=True)
         with st.container(border=True):
-            st.markdown("<h3 style='text-align: center; color: #495057;'>Connexion</h3>", unsafe_allow_html=True)
-            id_in = st.text_input("👤 Identifiant :", placeholder="Ex: admin")
-            mdp_in = st.text_input("🔑 Mot de passe :", type="password", placeholder="••••••••")
+            st.markdown("<h3 style='text-align: center;'>Connexion</h3>", unsafe_allow_html=True)
+            id_in = st.text_input("👤 Identifiant :")
+            mdp_in = st.text_input("🔑 Mot de passe :", type="password")
             if st.button("Se connecter au système 🚀", use_container_width=True, type="primary"):
                 utilisateurs = st.session_state.base_utilisateurs
                 match = utilisateurs[(utilisateurs['Identifiant'] == id_in) & (utilisateurs['Mot_De_Passe'] == mdp_in)]
@@ -190,40 +170,28 @@ if not st.session_state.authentifie:
                     st.session_state.role_utilisateur = match.iloc[0]['Role']
                     st.session_state.nom_utilisateur = match.iloc[0]['Identifiant']
                     st.rerun()
-                else:
-                    st.error("❌ Identifiant ou mot de passe incorrect.")
     st.stop()
 
 st.sidebar.title("🍳 Menu Easygest")
-st.sidebar.write(f"👤 **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
 options_disponibles = OPTIONS_PAR_ROLE.get(st.session_state.role_utilisateur, ["📝 Prise de Commande"])
 choix_vue = st.sidebar.radio("Navigation :", options_disponibles)
 
-if st.sidebar.button("Déconnexion 🚪", use_container_width=True):
-    st.session_state.authentifie = False
-    st.session_state.role_utilisateur = None
-    st.session_state.nom_utilisateur = None
-    st.rerun()
-
 # ==========================================
-# DÉFINITION DES DIFFÉRENTES VUES
+# VUE : PRISE DE COMMANDE CONSOLIDÉE
 # ==========================================
 def vue_prise_commande():
     st.subheader("📝 Écran Serveur : Prise de Commande Rapide & Options")
     df_global = consolider_stocks_et_marges()
 
-    if len(st.session_state.base_menu) == 0 or (len(st.session_state.base_menu) == 1 and "Exemple" in st.session_state.base_menu.iloc[0]['Designation']):
-        st.warning("⚠️ La carte est vide. Utilisez l'accès Admin pour la configurer.")
-        return
-
     col1, col2 = st.columns([1, 1])
     with col1:
         dict_menu = {}
         dict_categories = {}
+        
         for _, r in st.session_state.base_menu.iterrows():
             designation_upper = str(r['Designation']).upper().strip()
             
-            # FILTRAGE AUTOMATISÉ : Masque les ingrédients exacts ET tout article contenant le mot "LIQUEUR"
+            # FILTRE SÉCURISÉ TOTAL : Élimine les matières premières et TOUT article contenant le mot "LIQUEUR"
             if designation_upper in MATIERES_PREMIERES_CIBLES or "LIQUEUR" in designation_upper:
                 continue
 
@@ -232,32 +200,25 @@ def vue_prise_commande():
             dict_categories[label] = r['Categorie']
 
         if not dict_menu:
-            st.info("Aucun plat commercialisable configuré pour le moment.")
+            st.info("Aucun plat ou boisson disponible à la vente.")
             return
 
         table_choisie = st.selectbox("Sélectionner la Table :", [f"Table {i}" for i in range(1, 31)])
         item_choisi = st.selectbox("Article demandé :", list(dict_menu.keys()))
         
         categorie_active = dict_categories[item_choisi] if item_choisi else "Cuisine"
-        
         accomp_choisi = "-"
         if categorie_active == "Cuisine":
-            accomp_choisi = st.selectbox("Accompagnement gratuit :", ["Alloco", "Attiéké", "Frites", "Riz Blanc", "Riz Gras", "Sans"])
+            accomp_choisi = st.selectbox("Accompagnement gratuit :", ["Alloco", "Attiéké", "Frites", "Riz Blanc", "Sans"])
 
         with st.form("form_commande_strict", clear_on_submit=True):
             quantite = st.number_input("Quantité :", min_value=1, value=1)
             opt_remise = st.selectbox("Taux de remise :", [0, 5, 10, 15, 20])
-            motif_remise = "Aucun" if opt_remise == 0 else "Geste Commercial"
             
             if st.form_submit_button("Envoyer la commande 🚀"):
                 designation_plat = dict_menu[item_choisi]
-                lignes_trouvees = df_global[df_global['Designation'] == designation_plat]
+                item_details = df_global[df_global['Designation'] == designation_plat].iloc[0]
                 
-                if lignes_trouvees.empty:
-                    st.error(f"❌ Erreur : L'article '{designation_plat}' est introuvable.")
-                    return
-                
-                item_details = lignes_trouvees.iloc[0]
                 nom_matiere_brute, coef_defalquage = determiner_matiere_premiere(item_details['Designation'], item_details['Prix_Vente_FCFA'])
                 
                 matiere_a_deduire = designation_plat
@@ -270,279 +231,26 @@ def vue_prise_commande():
                         matiere_a_deduire = match_brute.iloc[0]['Designation']
                         target_details = match_brute.iloc[0]
                         quantite_a_deduire = float(quantite) * coef_defalquage
-                    else:
-                        st.error(f"❌ Erreur : L'ingrédient de base '{nom_matiere_brute}' n'existe pas en stock.")
-                        st.stop()
 
                 if quantite_a_deduire > target_details['Quantite_Dispo']:
-                    st.error(f"❌ Stock insuffisant ! (Disponible en {target_details['Designation']} : {target_details['Quantite_Dispo']} | Demandé : {quantite_a_deduire})")
+                    st.error(f"❌ Stock insuffisant ! (Dispo {target_details['Designation']}: {target_details['Quantite_Dispo']} | Demandé: {quantite_a_deduire})")
                 else:
                     total_net = (quantite * item_details['Prix_Vente_FCFA']) * (1 - (opt_remise / 100))
                     
                     nouvelle_ligne = pd.DataFrame([{
-                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                        'Table': table_choisie, 
-                        'Designation': designation_plat, 
-                        'Matiere_Stock': matiere_a_deduire, 
-                        'Type_Flux': 'Sortie', 
-                        'Quantite': quantite_a_deduire, 
-                        'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 
-                        'Remise_Pourcent': opt_remise, 
-                        'Accompagnement': accomp_choisi, 
-                        'Total_FCFA': total_net,
-                        'Motif_Remise': motif_remise, 
-                        'Statut': 'En cours', 
-                        'Ref_Bon': '-'
+                        'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': table_choisie, 
+                        'Designation': designation_plat, 'Matiere_Stock': matiere_a_deduire, 
+                        'Type_Flux': 'Sortie', 'Quantite': quantite_a_deduire, 
+                        'Prix_Unitaire_Flux': item_details['Prix_Vente_FCFA'], 'Remise_Pourcent': opt_remise, 
+                        'Accompagnement': accomp_choisi, 'Total_FCFA': total_net,
+                        'Motif_Remise': 'Aucun', 'Statut': 'En cours', 'Ref_Bon': '-'
                     }])
                     st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, nouvelle_ligne], ignore_index=True)
                     sauvegarder_ventes()
-                    st.success(f"Commande envoyée ! Déduction effectuée sur : {target_details['Designation']} (-{quantite_a_deduire})")
+                    st.success(f"Commande validée ! Stock déduit sur : {target_details['Designation']}")
                     st.rerun()
                     
     with col2:
-        st.info(f"👤 Connecté en tant que : **{st.session_state.nom_utilisateur}** ({st.session_state.role_utilisateur})")
+        st.info(f"👤 Connecté : **{st.session_state.nom_utilisateur}**")
 
-def vue_commandes_additions():
-    st.subheader("🧾 Écran Caisse : Suivi des Tables & Additions")
-    if st.session_state.historique_ventes.empty:
-        st.info("Aucune commande dans le système.")
-        return
-
-    df_suivi = st.session_state.historique_ventes.copy()
-    df_actives = df_suivi[df_suivi['Statut'] == 'En cours'].copy()
-    tabs_caisse = st.tabs(["🪑 Calcul d'Addition", "📋 Journal Général des Opérations"])
-    
-    with tabs_caisse[0]:
-        if df_actives.empty:
-            st.success("Toutes les tables sont actuellement réglées. ✨")
-        else:
-            tables_occupees = sorted(df_actives['Table'].unique())
-            table_selectionnee = st.selectbox("Sélectionner la table à encaisser :", tables_occupees)
-            df_table_strict = df_actives[df_actives['Table'] == table_selectionnee].copy()
-            
-            def formater_libelle(row):
-                designation = row['Designation'] if pd.notna(row['Designation']) else "Produit Inconnu"
-                if row['Accompagnement'] != "-" and row['Accompagnement'] != "Sans" and pd.notna(row['Accompagnement']):
-                    return f"{designation} (+ {row['Accompagnement']})"
-                return designation
-                
-            df_table_strict['Désignation Produit'] = df_table_strict.apply(formater_libelle, axis=1)
-            
-            st.dataframe(df_table_strict[['Heure', 'Désignation Produit', 'Quantite', 'Prix_Unitaire_Flux', 'Remise_Pourcent', 'Total_FCFA']], use_container_width=True, hide_index=True)
-            total_addition = df_table_strict['Total_FCFA'].sum()
-            st.markdown(f"## **Total Net à Payer : {total_addition:,.0f} FCFA**")
-            
-            col_btn1, col_btn2, col_btn3 = st.columns(3)
-            
-            if col_btn1.button(f"Encaisser la {table_selectionnee} 💰", type="primary", use_container_width=True):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
-                st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Payé'
-                sauvegarder_ventes()
-                st.success(f"La {table_selectionnee} a été réglée !")
-                st.rerun()
-                
-            if col_btn2.button(f"Imprimer le Ticket 🖨️", use_container_width=True):
-                st.session_state.declencher_impression = True
-                st.session_state.donnees_ticket = {
-                    'table': table_selectionnee,
-                    'articles': df_table_strict.to_dict('records'),
-                    'total': total_addition
-                }
-
-            if col_btn3.button(f"Annuler la {table_selectionnee} ❌", use_container_width=True):
-                indices_table = st.session_state.historique_ventes[(st.session_state.historique_ventes['Table'] == table_selectionnee) & (st.session_state.historique_ventes['Statut'] == 'En cours')].index
-                st.session_state.historique_ventes.loc[indices_table, 'Statut'] = 'Annulé'
-                sauvegarder_ventes()
-                st.warning(f"Commandes annulées.")
-                st.rerun()
-
-            if st.session_state.get('declencher_impression', False):
-                t_data = st.session_state.donnees_ticket
-                heure_ticket = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                
-                lignes_html = ""
-                for art in t_data['articles']:
-                    remise_text = f" (-{art['Remise_Pourcent']}% )" if art['Remise_Pourcent'] > 0 else ""
-                    lignes_html += f"""
-                    <tr>
-                        <td style='padding: 5px 0;'>{art['Désignation Produit']}{remise_text}<br><small>{int(art['Quantite'])} x {int(art['Prix_Unitaire_Flux']):,} F</small></td>
-                        <td style='text-align: right; padding: 5px 0; vertical-align: bottom;'>{int(art['Total_FCFA']):,} F</td>
-                    </tr>
-                    """
-
-                html_ticket = f"""
-                <html>
-                <head>
-                    <style>
-                        @page {{ size: auto; margin: 0mm; }}
-                        body {{ font-family: 'Courier New', Courier, monospace; width: 280px; margin: 10px auto; color: #000; font-size: 13px; }}
-                        .text-center {{ text-align: center; }}
-                        .bold {{ font-weight: bold; }}
-                        .divider {{ border-top: 1px dashed #000; margin: 10px 0; }}
-                        table {{ width: 100%; border-collapse: collapse; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="text-center">
-                        <h2 style="margin: 5px 0;">EASYGEST</h2>
-                        <p style="margin: 2px 0;">Restaurant & Bar</p>
-                        <p style="margin: 2px 0;">Abidjan, Côte d'Ivoire</p>
-                    </div>
-                    <div class="divider"></div>
-                    <p style="margin: 3px 0;"><b>Date:</b> {heure_ticket}</p>
-                    <p style="margin: 3px 0;"><b>{t_data['table']}</b></p>
-                    <p style="margin: 3px 0;"><b>Serveur:</b> {st.session_state.get('nom_utilisateur', 'Caisse')}</p>
-                    <div class="divider"></div>
-                    <table>
-                        <thead>
-                            <tr style="border-bottom: 1px solid #000;">
-                                <th style="text-align: left; padding-bottom: 5px;">Article</th>
-                                <th style="text-align: right; padding-bottom: 5px;">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {lignes_html}
-                        </tbody>
-                    </table>
-                    <div class="divider"></div>
-                    <h3 style="margin: 5px 0; display: flex; justify-content: space-between;">
-                        <span>NET A PAYER :</span>
-                        <span style="float: right;">{int(t_data['total']):,} FCFA</span>
-                    </h3>
-                    <div class="divider"></div>
-                    <div class="text-center" style="margin-top: 15px; font-size: 11px;">
-                        <p>Merci de votre visite !</p>
-                        <p>À bientôt ✨</p>
-                    </div>
-                    <script>
-                        window.print();
-                    </script>
-                </body>
-                </html>
-                """
-                components.html(html_ticket, height=0, width=0)
-                st.session_state.declencher_impression = False
-
-    with tabs_caisse[1]:
-        st.dataframe(df_suivi.sort_index(ascending=False), use_container_width=True, hide_index=True)
-
-def vue_stocks_appro():
-    st.subheader("📦 Gestion des Stocks & Bons d'Entrée")
-    df_global = consolider_stocks_et_marges()
-    
-    tab_cuisine, tab_bar, tab_bons = st.tabs(["🍳 Stock CUISINE (Ingrédients)", "🍹 Stock BAR (Boissons & Liqueurs)", "📄 Bons d'Entrée Valorisés"])
-    
-    with tab_cuisine:
-        df_cuisine_brut = df_global[df_global['Categorie'] == 'Cuisine'].copy()
-        df_cuisine = df_cuisine_brut[df_cuisine_brut['Designation'].str.upper().str.strip().isin(MATIERES_PREMIERES_CIBLES)]
-        
-        if df_cuisine.empty:
-            st.info("Aucune matière première brute n'est détectée dans votre base cuisine.")
-        else:
-            st.dataframe(df_cuisine[['Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum']], use_container_width=True, hide_index=True)
-        
-        with st.expander("📥 Enregistrer un Achat / Approvisionnement Cuisine"):
-            if df_cuisine.empty:
-                st.info("Configurez d'abord vos matières premières.")
-            else:
-                with st.form("form_appro_cuisine", clear_on_submit=True):
-                    art_choisi = st.selectbox("Ingrédient Cuisine reçu :", list(df_cuisine['Designation'].unique()))
-                    qte_recue = st.number_input("Quantité achetée :", min_value=1, value=10)
-                    px_achat_unit = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=1000)
-                    fournisseur = st.text_input("Nom du Fournisseur :", value="Grossiste Marché")
-                    
-                    if st.form_submit_button("Générer le Bon d'Entrée Cuisine 📑"):
-                        ref_bon = f"BON-CUI-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-                        ligne_appro = pd.DataFrame([{
-                            'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_CUISINE', 
-                            'Designation': art_choisi, 'Matiere_Stock': art_choisi, 'Type_Flux': 'Réappro', 
-                            'Quantite': float(qte_recue), 'Prix_Unitaire_Flux': float(px_achat_unit),
-                            'Remise_Pourcent': 0, 'Accompagnement': '-', 'Total_FCFA': float(qte_recue * px_achat_unit), 
-                            'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
-                        }])
-                        st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
-                        
-                        idx = st.session_state.base_menu[st.session_state.base_menu['Designation'] == art_choisi].index
-                        if not idx.empty: st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit
-                        
-                        st.session_state.historique_bons[ref_bon] = {
-                            'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'CUISINE', 'Article': art_choisi,
-                            'Quantite': qte_recue, 'Prix_Unitaire': px_achat_unit, 'Total': qte_recue * px_achat_unit, 'Fournisseur': fournisseur
-                        }
-                        sauvegarder_ventes()
-                        sauvegarder_menu()
-                        sauvegarder_bons()
-                        st.success(f"Bon {ref_bon} enregistré !")
-                        st.rerun()
-
-    with tab_bar:
-        # Affiche tout le Bar, y compris les bouteilles "LIQUEUR CHIVAS", etc.
-        df_bar = df_global[df_global['Categorie'] == 'Bar']
-        if df_bar.empty:
-            st.info("Aucun article Bar configuré dans votre système.")
-        else:
-            st.dataframe(df_bar[['Designation', 'Stock_Initial', 'Total_Entrees', 'Total_Sorties', 'Quantite_Dispo', 'Stock_Minimum', 'Prix_Vente_FCFA']], use_container_width=True, hide_index=True)
-        
-        with st.expander("📥 Enregistrer un Achat / Approvisionnement Bar & Liqueurs"):
-            if df_bar.empty:
-                st.info("Aucun article Bar configuré.")
-            else:
-                with st.form("form_appro_bar", clear_on_submit=True):
-                    art_choisi_bar = st.selectbox("Article Bar/Liqueur reçu :", list(df_bar['Designation'].unique()))
-                    qte_recue_bar = st.number_input("Quantité achetée (Bouteilles/Canettes) :", min_value=1, value=24)
-                    px_achat_unit_bar = st.number_input("Prix d'Achat UNITAIRE (FCFA) :", min_value=0, value=500)
-                    fournisseur_bar = st.text_input("Nom du Fournisseur :", value="SOLIBRA / Distributeur")
-                    
-                    if st.form_submit_button("Générer le Bon d'Entrée Bar 📑"):
-                        ref_bon = f"BON-BAR-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-                        ligne_appro = pd.DataFrame([{
-                            'Heure': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Table': 'APPRO_BAR', 
-                            'Designation': art_choisi_bar, 'Matiere_Stock': art_choisi_bar, 'Type_Flux': 'Réappro', 
-                            'Quantite': float(qte_recue_bar), 'Prix_Unitaire_Flux': float(px_achat_unit_bar),
-                            'Remise_Pourcent': 0, 'Accompagnement': '-', 'Total_FCFA': float(qte_recue_bar * px_achat_unit_bar), 
-                            'Motif_Remise': 'Aucun', 'Statut': 'Stocké', 'Ref_Bon': ref_bon
-                        }])
-                        st.session_state.historique_ventes = pd.concat([st.session_state.historique_ventes, ligne_appro], ignore_index=True)
-                        
-                        idx = st.session_state.base_menu[st.session_state.base_menu['Designation'] == art_choisi_bar].index
-                        if not idx.empty: st.session_state.base_menu.loc[idx, 'Prix_Achat_Moyen_FCFA'] = px_achat_unit_bar
-                        
-                        st.session_state.historique_bons[ref_bon] = {
-                            'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Type': 'BAR', 'Article': art_choisi_bar,
-                            'Quantite': qte_recue_bar, 'Prix_Unitaire': px_achat_unit_bar, 'Total': qte_recue_bar * px_achat_unit_bar, 'Fournisseur': fournisseur_bar
-                        }
-                        sauvegarder_ventes()
-                        sauvegarder_menu()
-                        sauvegarder_bons()
-                        st.success(f"Bon {ref_bon} enregistré !")
-                        st.rerun()
-
-    with tab_bons:
-        if not st.session_state.historique_bons:
-            st.info("Aucun bon d'entrée disponible.")
-        else:
-            bon_selectionne = st.selectbox("Choisir un Bon pour contrôle :", list(st.session_state.historique_bons.keys())[::-1])
-            b = st.session_state.historique_bons[bon_selectionne]
-            
-            code_html_bon = f"""
-            <div style="border:2px solid #000; padding:20px; background-color:#fff; color:#000; font-family:monospace; max-width:600px; margin:auto;">
-                <h2 style="text-align:center; margin:0;">EASYGEST RESTO - BON D'ENTRÉE</h2>
-                <p style="text-align:center;"><b>N° BON : {bon_selectionne}</b></p>
-                <hr style="border-top: 1px dashed #000;">
-                <p><b>Date :</b> {b['Date']} | <b>Section :</b> {b['Type']}</p>
-                <p><b>Fournisseur :</b> {b['Fournisseur']}</p>
-                <hr style="border-top: 1px dashed #000;">
-                <table style="width:100%; text-align:left;">
-                    <tr><th>Désignation</th><th>Qté</th><th>P.U</th><th>Total</th></tr>
-                    <tr><td>{b['Article']}</td><td>{b['Quantite']}</td><td>{b['Prix_Unitaire']:,} F</td><td>{b['Total']:,} F</td></tr>
-                </table>
-                <hr style="border-top: 1px dashed #000;">
-            </div>
-            """
-            st.markdown(code_html_bon, unsafe_allow_html=True)
-
-# Lancement des fonctions de vues mappées
 if choix_vue == "📝 Prise de Commande": vue_prise_commande()
-elif choix_vue == "🧾 Commandes & Additions": vue_commandes_additions()
-elif choix_vue == "📦 Stocks & Approvisionnements": vue_stocks_appro()
-else: st.info("Vue en cours de finalisation ou restreinte.")
